@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Escáner de Cartas</title>
+<style>
+/* Layout: cámara fija a la izquierda (arriba en celular) con marco guía; inventario y valor a la derecha. */
+:root{
+  --bg:#eef0f6; --surface:#ffffff; --surface-2:#f5f6fb; --fg:#14172b; --muted:#596079; --line:#d9dce9;
+  --accent:#3a3fd6; --accent-fg:#ffffff; --good:#12a150; --bad:#c0392b; --warn:#8f5b00;
+  --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#0f111b;--surface:#171a28;--surface-2:#1d2132;--fg:#e9ebf7;--muted:#9aa1bd;--line:#2b3047;--accent:#9296ff;--accent-fg:#0f1020;--good:#2fd47a;--bad:#ff8a80;--warn:#e0a83a;color-scheme:dark}
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--font);font-size:15px;line-height:1.45}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{max-width:1120px;margin:0 auto;padding:12px 16px 40px;display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+@media (min-width:900px){.app{grid-template-columns:minmax(0,5fr) minmax(0,6fr);align-items:start}.cam{position:sticky;top:12px}}
+header{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 16px}
+h1{font-size:1.3rem;margin:0;letter-spacing:-.01em}
+.stats{display:flex;flex-wrap:wrap;gap:2px 14px;font-family:var(--mono);font-size:.8rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.stats b{color:var(--fg);font-weight:600}
+
+.stage{position:relative;background:#000;border-radius:14px;overflow:hidden;aspect-ratio:1/1}
+@media (min-width:900px){.stage{aspect-ratio:4/3}}
+video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.guide{position:absolute;top:7%;left:50%;height:86%;aspect-ratio:59/86;transform:translateX(-50%);border:3px solid rgba(255,255,255,.85);border-radius:10px;box-shadow:0 0 0 9999px rgba(0,0,0,.35);transition:border-color .15s,box-shadow .15s}
+.guide.reading{border-color:#fff;animation:pulse 1s ease-in-out infinite}
+.guide.ok{border-color:var(--good);box-shadow:0 0 0 9999px rgba(0,0,0,.3),0 0 0 4px rgba(18,161,80,.35) inset}
+@keyframes pulse{50%{border-color:rgba(255,255,255,.4)}}
+@media (prefers-reduced-motion: reduce){.guide.reading{animation:none}}
+.band{position:absolute;left:0;right:0;top:60%;height:24%;border-top:1px dashed rgba(255,255,255,.45);border-bottom:1px dashed rgba(255,255,255,.45);pointer-events:none}
+.band span{position:absolute;right:6px;bottom:2px;font-size:.62rem;font-family:var(--mono);color:rgba(255,255,255,.7)}
+.tag{position:absolute;left:8px;right:8px;bottom:8px;background:rgba(0,0,0,.72);color:#fff;border-radius:10px;padding:8px 10px;font-size:.88rem;display:none}
+.tag.on{display:block}
+.tag.ok{background:rgba(10,110,55,.92)}
+.tag b{display:block;font-size:1rem}
+.tag .sub{font-family:var(--mono);font-size:.78rem;opacity:.9}
+.start{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:20px;text-align:center;color:#fff;background:#12141f}
+.start p{margin:0;max-width:34ch;font-size:.9rem;color:#c9cde4}
+.camrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;align-items:center}
+.status{margin-top:10px;font-size:.9rem;color:var(--muted);min-height:1.4em}
+.status.err{color:var(--bad)}
+.btn{min-height:44px;padding:0 16px;border-radius:10px;border:1px solid var(--line);background:var(--surface);cursor:pointer;font-weight:600}
+.btn:hover{border-color:var(--accent)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.btn.small{min-height:36px;padding:0 12px;font-size:.88rem}
+.btn.ghost{background:transparent}
+select.sel,input.txt{min-height:44px;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:0 10px;min-width:0}
+.manual{display:flex;gap:8px;margin-top:10px}
+.manual input{flex:1}
+.manual input{font-family:var(--mono);text-transform:uppercase}
+
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
+.bar h2{margin:0;font-size:1.05rem}
+.tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.lbl{font-size:.8rem;color:var(--muted)}
+.list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.row{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;align-items:center}
+.row.new{border-color:var(--good)}
+.nm{font-weight:600;overflow-wrap:anywhere}
+.meta{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;margin-top:3px;font-size:.82rem;color:var(--muted)}
+.code{font-family:var(--mono);font-size:.78rem;color:var(--fg)}
+.pill{font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--line);color:var(--fg)}
+.rsel{min-height:32px;border:1px solid var(--warn);border-radius:8px;background:var(--surface);padding:0 6px;font-size:.82rem;max-width:100%}
+.side{display:flex;align-items:center;gap:10px;justify-content:flex-end}
+.price{text-align:right;font-family:var(--mono);font-size:.84rem;font-variant-numeric:tabular-nums;line-height:1.25}
+.price small{display:block;color:var(--muted);font-size:.72rem}
+.step{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.step button{width:34px;height:34px;border:0;background:var(--surface);cursor:pointer;font-size:1.1rem;line-height:1}
+.step span{min-width:28px;text-align:center;font-family:var(--mono)}
+.rm{border:0;background:transparent;color:var(--muted);cursor:pointer;min-height:34px;padding:0 6px;border-radius:8px;font-size:.82rem}
+.rm:hover{color:var(--bad)}
+.breakdown{grid-column:1/-1;font-size:.75rem;color:var(--muted);font-family:var(--mono);overflow-wrap:anywhere}
+.empty{border:1px dashed var(--line);border-radius:10px;padding:18px;text-align:center;color:var(--muted)}
+.note{font-size:.8rem;color:var(--muted)}
+@media (max-width:480px){.row{grid-template-columns:minmax(0,1fr)}.side{justify-content:space-between}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Escáner de Cartas</h1>
+    <div class="stats" id="stats"></div>
+  </header>
+
+  <section class="cam" aria-label="Cámara">
+    <div class="stage" id="stage">
+      <video id="video" playsinline muted></video>
+      <div class="guide" id="guide"><div class="band"><span>código</span></div></div>
+      <div class="tag" id="tag"></div>
+      <div class="start" id="start">
+        <strong>Muestra cada carta a la cámara</strong>
+        <p>Se lee sola, sin tomar foto. Pon la carta de frente dentro del marco, con el código del set (debajo de la ilustración) dentro de la franja punteada.</p>
+        <button class="btn primary" type="button" id="startBtn">Iniciar cámara</button>
+      </div>
+    </div>
+    <div class="status" id="status" aria-live="polite">La cámara está apagada.</div>
+    <div class="camrow">
+      <button class="btn small" type="button" id="pauseBtn" disabled>Pausar</button>
+      <select class="sel" id="camSel" aria-label="Elegir cámara" hidden></select>
+    </div>
+    <form class="manual" id="manualForm">
+      <input class="txt" id="manualIn" type="text" placeholder="¿No la lee? Escribe el código: LOB-EN005" autocomplete="off" aria-label="Código del set">
+      <button class="btn" type="submit">Agregar</button>
+    </form>
+  </section>
+
+  <section class="panel" aria-label="Inventario">
+    <div class="bar">
+      <h2 id="invTitle">Inventario</h2>
+      <div class="tools">
+        <label class="lbl" for="basis">Valor con</label>
+        <select class="sel" id="basis" style="min-height:36px">
+          <option value="print">Precio de la impresión</option>
+          <option value="stores">Promedio de tiendas</option>
+        </select>
+      </div>
+    </div>
+    <ul class="list" id="list"></ul>
+    <div class="empty" id="empty">Aún no hay cartas. Inicia la cámara y muestra la primera.</div>
+    <div class="bar">
+      <div class="tools">
+        <button class="btn small" type="button" id="refreshBtn">Actualizar precios</button>
+        <button class="btn small primary" type="button" id="csvBtn">Exportar CSV</button>
+      </div>
+      <button class="btn small ghost" type="button" id="clearBtn">Vaciar</button>
+    </div>
+    <p class="note">Precios en USD de YGOPRODeck, que reúne TCGplayer, Cardmarket, eBay, CoolStuffInc y Amazon. El promedio de tiendas no incluye Amazon, que suele traer vendedores con sobreprecio. Los precios son de la edición en inglés.</p>
+  </section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script>
+(function(){
+'use strict';
+
+var API='https://db.ygoprodeck.com/api/v7/';
+var STORAGE='escaner-cartas-v1';
+var STORE_KEYS=['tcgplayer','cardmarket','ebay','coolstuffinc'];
+var STORE_LABELS={tcgplayer:'TCGplayer',cardmarket:'Cardmarket',ebay:'eBay',coolstuffinc:'CoolStuffInc',amazon:'Amazon'};
+var LANGS=['EN','SP','FR','DE','IT','PT','JP','KR','AE'];
+
+// <pure>
+function fixDigits(t){return t.replace(/O/g,'0').replace(/[IL]/g,'1').replace(/S/g,'5').replace(/B/g,'8').replace(/Z/g,'2').replace(/G/g,'6')}
+function candidateCodes(token){
+  var t=String(token||'').toUpperCase().replace(/[^A-Z0-9-]/g,'');
+  var out=[], seen={};
+  function push(c){if(!seen[c]){seen[c]=1;out.push(c)}}
+  var pre,suf,m=t.match(/([A-Z0-9]{2,6})-([A-Z0-9]{3,6})/);
+  if(m){pre=m[1];suf=m[2]}
+  else{
+    var m2=t.match(/^([A-Z0-9]{2,6}?)(EN|SP|FR|DE|IT|PT|JP|KR|AE)(\d{3})$/);
+    if(!m2)return out;
+    pre=m2[1];suf=m2[2]+m2[3];
+  }
+  var preVars=[pre]; if(/0/.test(pre))preVars.push(pre.replace(/0/g,'O'));
+  var last3=suf.slice(-3), head=suf.slice(0,-3);
+  var tails=[last3], fixed=fixDigits(last3); if(fixed!==last3)tails.push(fixed);
+  preVars.forEach(function(p){
+    tails.forEach(function(tl){
+      if(head.length===0){push(p+'-'+tl);push(p+'-EN'+tl)}
+      else{push(p+'-EN'+tl);push(p+'-'+head+tl)}
+    });
+  });
+  return out.slice(0,8);
+}
+function detectLang(token){
+  var m=String(token||'').toUpperCase().match(/-([A-Z]{2})[A-Z0-9]{3}/);
+  return m&&LANGS.indexOf(m[1])>-1?m[1]:'EN';
+}
+function extractTokens(data){
+  var res=[];
+  var words=(data&&data.words)||[];
+  words.forEach(function(w){
+    var t=String(w.text||'').toUpperCase().replace(/[^A-Z0-9-]/g,'');
+    if(t.length>=6&&candidateCodes(t).length)res.push({token:t,conf:w.confidence||0});
+  });
+  if(!res.length&&data&&data.text){
+    data.text.toUpperCase().split(/\s+/).forEach(function(t){
+      var c=t.replace(/[^A-Z0-9-]/g,'');
+      if(c.length>=6&&candidateCodes(c).length)res.push({token:c,conf:data.confidence||0});
+    });
+  }
+  return res.sort(function(a,b){return b.conf-a.conf});
+}
+function num(v){var n=parseFloat(v);return isFinite(n)&&n>0?n:0}
+function storeAvg(stores){
+  var v=STORE_KEYS.map(function(k){return stores&&stores[k]}).filter(function(n){return n>0});
+  return v.length?v.reduce(function(a,b){return a+b},0)/v.length:0;
+}
+function itemValue(it,basis){
+  var a=it.printPrice>0?it.printPrice:0, b=storeAvg(it.stores);
+  return basis==='stores'?(b||a):(a||b);
+}
+function csvCell(v){
+  var s=v==null?'':String(v);
+  if(/^[=+\-@]/.test(s))s="'"+s;
+  return /[",\n;]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;
+}
+// </pure>
+
+/* ---------- estado ---------- */
+var $=function(id){return document.getElementById(id)};
+var video=$('video'), guide=$('guide'), tag=$('tag'), statusEl=$('status');
+var items=[], prefs={basis:'print',lastRarity:{}};
+var stream=null, worker=null, running=false, state='idle', votes=[], failTicks=0, lockSig=null, changeCount=0;
+var setCache=new Map(), cardCache=new Map(), audioCtx=null, tagTimer=null;
+var work=document.createElement('canvas'), sigCv=document.createElement('canvas');
+sigCv.width=24; sigCv.height=34;
+
+function h(tagName,props){
+  var e=document.createElement(tagName), p=props||{};
+  Object.keys(p).forEach(function(k){
+    var v=p[k];
+    if(k==='class')e.className=v;
+    else if(k==='text')e.textContent=v;
+    else if(k.indexOf('on')===0)e.addEventListener(k.slice(2),v);
+    else if(v===true)e.setAttribute(k,'');
+    else if(v!==false&&v!=null)e.setAttribute(k,v);
+  });
+  for(var i=2;i<arguments.length;i++){
+    [].concat(arguments[i]).forEach(function(c){if(c==null||c===false)return;e.append(c.nodeType?c:document.createTextNode(String(c)))});
+  }
+  return e;
+}
+function money(n){return '$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
+function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
+function setStatus(msg,isErr){statusEl.textContent=msg;statusEl.className='status'+(isErr?' err':'')}
+function setGuide(cls){guide.className='guide'+(cls?' '+cls:'')}
+function showTag(html,ok,keepMs){
+  tag.replaceChildren(); html.forEach(function(n){tag.append(n)});
+  tag.className='tag on'+(ok?' ok':'');
+  clearTimeout(tagTimer); if(keepMs)tagTimer=setTimeout(function(){tag.className='tag'},keepMs);
+}
+function hideTag(){clearTimeout(tagTimer);tag.className='tag'}
+
+function beep(){
+  try{
+    audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();
+    var o=audioCtx.createOscillator(), g=audioCtx.createGain();
+    o.frequency.value=880; g.gain.value=0.08; o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime+0.09);
+  }catch(e){}
+  try{if(navigator.vibrate)navigator.vibrate(60)}catch(e){}
+}
+
+/* ---------- guardado ---------- */
+function save(){try{localStorage.setItem(STORAGE,JSON.stringify({items:items,prefs:prefs}))}catch(e){}}
+function load(){
+  try{
+    var s=JSON.parse(localStorage.getItem(STORAGE)||'null');
+    if(s){items=s.items||[];prefs=Object.assign(prefs,s.prefs||{})}
+  }catch(e){}
+}
+
+/* ---------- base de cartas (YGOPRODeck) ---------- */
+function lookupSet(code){
+  if(setCache.has(code))return Promise.resolve(setCache.get(code));
+  return fetch(API+'cardsetsinfo.php?setcode='+encodeURIComponent(code)).then(function(r){
+    if(r.status>=500)throw new Error('http '+r.status);
+    return r.json().catch(function(){return null});
+  }).then(function(j){
+    var v=(j&&!j.error&&j.name&&j.id)?j:null;
+    setCache.set(code,v); return v;
+  });
+}
+function loadCard(id){
+  if(cardCache.has(id))return Promise.resolve(cardCache.get(id));
+  return fetch(API+'cardinfo.php?id='+encodeURIComponent(id)).then(function(r){
+    if(!r.ok)throw new Error('http '+r.status);
+    return r.json();
+  }).then(function(j){
+    var c=j&&j.data&&j.data[0]; if(!c)throw new Error('sin datos');
+    cardCache.set(id,c); return c;
+  });
+}
+function storesFrom(card){
+  var p=(card.card_prices&&card.card_prices[0])||{};
+  return {tcgplayer:num(p.tcgplayer_price),cardmarket:num(p.cardmarket_price),ebay:num(p.ebay_price),amazon:num(p.amazon_price),coolstuffinc:num(p.coolstuffinc_price)};
+}
+function buildFromCode(info,lang){
+  return loadCard(info.id).then(function(card){
+    var code=info.set_code;
+    var opts=(card.card_sets||[]).filter(function(s){return s.set_code===code}).map(function(s){return {rarity:s.set_rarity,price:num(s.set_price),setName:s.set_name}});
+    if(!opts.length)opts=[{rarity:info.set_rarity,price:num(info.set_price),setName:info.set_name}];
+    var rar=prefs.lastRarity[code], pick=opts.filter(function(o){return o.rarity===rar})[0]||opts.filter(function(o){return o.rarity===info.set_rarity})[0]||opts[0];
+    return {cardId:info.id,name:card.name,setCode:code,setName:pick.setName,rarity:pick.rarity,options:opts,lang:lang||'EN',printPrice:pick.price,stores:storesFrom(card)};
+  });
+}
+
+/* ---------- inventario ---------- */
+function keyOf(it){return it.setCode+'|'+it.rarity}
+function addItem(base){
+  var found=items.filter(function(i){return keyOf(i)===keyOf(base)})[0];
+  if(found){found.qty++;found.ts=Date.now();found.stores=base.stores;found.printPrice=base.printPrice;save();render();return found}
+  var it=Object.assign({qty:1,ts:Date.now()},base); items.push(it); save(); render(); return it;
+}
+function changeRarity(it,rarity){
+  var opt=it.options.filter(function(o){return o.rarity===rarity})[0]; if(!opt)return;
+  prefs.lastRarity[it.setCode]=rarity;
+  var other=items.filter(function(i){return i!==it&&i.setCode===it.setCode&&i.rarity===rarity})[0];
+  if(other){other.qty+=it.qty;items=items.filter(function(i){return i!==it})}
+  else{it.rarity=rarity;it.printPrice=opt.price;it.setName=opt.setName}
+  save();render();
+}
+function totals(){
+  var q=0,v=0,unpriced=0;
+  items.forEach(function(i){q+=i.qty;var x=itemValue(i,prefs.basis);if(x>0)v+=x*i.qty;else unpriced++});
+  return {qty:q,unique:items.length,value:v,unpriced:unpriced};
+}
+function render(){
+  var t=totals(), s=$('stats'); s.replaceChildren();
+  s.append(h('span',null,h('b',{text:t.qty}),' cartas'),h('span',null,h('b',{text:t.unique}),' únicas'),
+    h('span',null,'valor ',h('b',{text:money(t.value)+' USD'}),t.unpriced?' (+'+t.unpriced+' sin precio)':''));
+  $('invTitle').textContent='Inventario'+(items.length?' · '+items.length:'');
+  $('basis').value=prefs.basis;
+  var list=$('list'); list.replaceChildren();
+  items.slice().sort(function(a,b){return (b.ts||0)-(a.ts||0)}).forEach(function(it,idx){
+    var v=itemValue(it,prefs.basis), multi=it.options&&it.options.length>1;
+    var rar;
+    if(multi){
+      rar=h('select',{class:'rsel','aria-label':'Rareza de '+it.name,onchange:function(e){changeRarity(it,e.target.value)}});
+      it.options.forEach(function(o){rar.append(h('option',{value:o.rarity,selected:o.rarity===it.rarity,text:o.rarity+(o.price?' · '+money(o.price):'')}))});
+    }else rar=h('span',{class:'pill',text:it.rarity||'Sin rareza'});
+    var side=h('div',{class:'side'});
+    if(v>0)side.append(h('div',{class:'price'},money(v*it.qty),it.qty>1?h('small',{text:it.qty+' × '+money(v)}):null));
+    else side.append(h('div',{class:'price'},'sin precio'));
+    side.append(h('div',{class:'step'},
+      h('button',{type:'button','aria-label':'Quitar una copia',text:'−',onclick:function(){if(it.qty>1){it.qty--}else{items=items.filter(function(i){return i!==it})}save();render()}}),
+      h('span',{text:it.qty}),
+      h('button',{type:'button','aria-label':'Agregar una copia',text:'+',onclick:function(){it.qty++;save();render()}})));
+    side.append(h('button',{class:'rm',type:'button',text:'Quitar',onclick:function(){items=items.filter(function(i){return i!==it});save();render()}}));
+    var row=h('li',{class:'row'},
+      h('div',{style:'min-width:0'},h('div',{class:'nm',text:it.name}),
+        h('div',{class:'meta'},h('span',{class:'code',text:it.setCode}),rar,it.lang&&it.lang!=='EN'?h('span',{text:'impresa en '+it.lang}):null)),
+      side);
+    var parts=Object.keys(STORE_LABELS).filter(function(k){return it.stores&&it.stores[k]>0}).map(function(k){return STORE_LABELS[k]+' '+money(it.stores[k])});
+    var sa=storeAvg(it.stores);
+    if(it.printPrice>0||parts.length)row.append(h('div',{class:'breakdown',text:(it.printPrice>0?'Impresión '+money(it.printPrice):'Impresión s/d')+' · Promedio tiendas '+(sa?money(sa):'s/d')+(parts.length?' ('+parts.join(' · ')+')':'')}));
+    list.append(row);
+  });
+  $('empty').hidden=items.length>0;
+}
+
+function exportCsv(){
+  if(!items.length)return;
+  var head=['nombre','codigo_set','set','rareza','idioma_impreso','cantidad','valor_unitario_usd','valor_total_usd','precio_impresion','promedio_tiendas','tcgplayer','cardmarket','ebay','coolstuffinc','amazon'];
+  var lines=[head.join(',')];
+  items.slice().sort(function(a,b){return a.name.localeCompare(b.name)}).forEach(function(i){
+    var v=itemValue(i,prefs.basis), s=i.stores||{};
+    lines.push([i.name,i.setCode,i.setName,i.rarity,i.lang,i.qty,v?v.toFixed(2):'',v?(v*i.qty).toFixed(2):'',i.printPrice||'',storeAvg(s)?storeAvg(s).toFixed(2):'',s.tcgplayer||'',s.cardmarket||'',s.ebay||'',s.coolstuffinc||'',s.amazon||''].map(csvCell).join(','));
+  });
+  var blob=new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8'});
+  var d=new Date(), p=function(n){return String(n).padStart(2,'0')};
+  var a=h('a',{href:URL.createObjectURL(blob),download:'inventario-cartas-'+d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'.csv'});
+  document.body.append(a); a.click(); a.remove();
+}
+function refreshPrices(){
+  if(!items.length)return;
+  var ids=Array.from(new Set(items.map(function(i){return i.cardId})));
+  var btn=$('refreshBtn'); btn.disabled=true; btn.textContent='Actualizando…';
+  var chunks=[]; for(var i=0;i<ids.length;i+=30)chunks.push(ids.slice(i,i+30));
+  chunks.reduce(function(p,ch){
+    return p.then(function(){return fetch(API+'cardinfo.php?id='+ch.join(',')).then(function(r){if(!r.ok)throw new Error('http');return r.json()}).then(function(j){
+      (j.data||[]).forEach(function(card){
+        cardCache.set(card.id,card);
+        items.forEach(function(it){
+          if(it.cardId!==card.id)return;
+          it.stores=storesFrom(card);
+          var s=(card.card_sets||[]).filter(function(x){return x.set_code===it.setCode&&x.set_rarity===it.rarity})[0];
+          if(s)it.printPrice=num(s.set_price);
+        });
+      });
+    })}).then(function(){return sleep(120)});
+  },Promise.resolve()).then(function(){save();render();setStatus('Precios actualizados.')}).catch(function(){setStatus('No se pudieron actualizar los precios. Revisa tu conexión.',true)}).then(function(){btn.disabled=false;btn.textContent='Actualizar precios'});
+}
+
+/* ---------- cámara ---------- */
+function guideInVideo(){
+  var vr=video.getBoundingClientRect(), gr=guide.getBoundingClientRect();
+  var vw=video.videoWidth, vh=video.videoHeight;
+  var scale=Math.max(vr.width/vw,vr.height/vh);
+  var offX=(vr.width-vw*scale)/2, offY=(vr.height-vh*scale)/2;
+  var x=(gr.left-vr.left-offX)/scale, y=(gr.top-vr.top-offY)/scale, w=gr.width/scale, hh=gr.height/scale;
+  x=Math.max(0,x); y=Math.max(0,y); w=Math.min(w,vw-x); hh=Math.min(hh,vh-y);
+  return {x:x,y:y,w:w,h:hh};
+}
+function pct(hist,n,p){var acc=0,t=n*p;for(var i=0;i<256;i++){acc+=hist[i];if(acc>=t)return i}return 255}
+function grab(whole,flip){
+  var r=guideInVideo(), y0=whole?0:0.60, y1=whole?1:0.84;
+  var sx=r.x, sy=r.y+r.h*y0, sw=r.w, sh=r.h*(y1-y0);
+  var outW=whole?1100:900, outH=Math.max(1,Math.round(sh*outW/sw));
+  work.width=outW; work.height=outH;
+  var ctx=work.getContext('2d',{willReadFrequently:true});
+  ctx.drawImage(video,sx,sy,sw,sh,0,0,outW,outH);
+  var img=ctx.getImageData(0,0,outW,outH), d=img.data, n=outW*outH;
+  var gray=new Uint8ClampedArray(n), hist=new Uint32Array(256), sum=0, i, p;
+  for(i=0,p=0;i<n;i++,p+=4){var g=((d[p]*299+d[p+1]*587+d[p+2]*114)/1000)|0;gray[i]=g;sum+=g;hist[g]++}
+  var mean=sum/n, lo=pct(hist,n,0.02), hi=pct(hist,n,0.98); if(hi-lo<20)hi=lo+20;
+  var invert=(mean<105)!==!!flip;
+  for(i=0,p=0;i<n;i++,p+=4){
+    var v=(gray[i]-lo)*255/(hi-lo); v=v<0?0:(v>255?255:v); if(invert)v=255-v;
+    d[p]=d[p+1]=d[p+2]=v; d[p+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+  return work;
+}
+function signature(){
+  var r=guideInVideo(), ctx=sigCv.getContext('2d',{willReadFrequently:true});
+  ctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,24,34);
+  var d=ctx.getImageData(0,0,24,34).data, out=new Uint8Array(24*34);
+  for(var i=0,p=0;i<out.length;i++,p+=4)out[i]=((d[p]*299+d[p+1]*587+d[p+2]*114)/1000)|0;
+  return out;
+}
+function sigDiff(a){
+  var b=signature(), s=0; for(var i=0;i<a.length;i++)s+=Math.abs(a[i]-b[i]);
+  return s/a.length;
+}
+
+function initWorker(){
+  if(worker)return Promise.resolve();
+  if(!window.Tesseract)return Promise.reject(new Error('El lector no se pudo descargar. Revisa tu conexión a internet.'));
+  setStatus('Cargando el lector de texto (la primera vez tarda un poco)…');
+  return Tesseract.createWorker('eng',1,{}).then(function(w){
+    return w.setParameters({tessedit_char_whitelist:'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-',tessedit_pageseg_mode:'11',user_defined_dpi:'300'}).then(function(){worker=w});
+  });
+}
+function listDevices(){
+  if(!navigator.mediaDevices||!navigator.mediaDevices.enumerateDevices)return;
+  navigator.mediaDevices.enumerateDevices().then(function(ds){
+    var cams=ds.filter(function(d){return d.kind==='videoinput'}), sel=$('camSel');
+    if(cams.length<2){sel.hidden=true;return}
+    sel.replaceChildren(); var cur=stream&&stream.getVideoTracks()[0]&&stream.getVideoTracks()[0].getSettings().deviceId;
+    cams.forEach(function(c,i){sel.append(h('option',{value:c.deviceId,selected:c.deviceId===cur,text:c.label||('Cámara '+(i+1))}))});
+    sel.hidden=false;
+  }).catch(function(){});
+}
+function startCamera(deviceId){
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+    setStatus('Este navegador no permite usar la cámara aquí. Abre el archivo en Chrome, Edge o Safari desde https o localhost.',true);return Promise.resolve(false);
+  }
+  if(stream){stream.getTracks().forEach(function(t){t.stop()});stream=null}
+  var v=deviceId?{deviceId:{exact:deviceId},width:{ideal:1920},height:{ideal:1080}}:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}};
+  return navigator.mediaDevices.getUserMedia({audio:false,video:v}).then(function(s){
+    stream=s; video.srcObject=s; return video.play();
+  }).then(function(){
+    try{
+      var t=stream.getVideoTracks()[0], caps=t.getCapabilities&&t.getCapabilities();
+      if(caps&&caps.focusMode&&caps.focusMode.indexOf('continuous')>-1)t.applyConstraints({advanced:[{focusMode:'continuous'}]}).catch(function(){});
+    }catch(e){}
+    listDevices(); return true;
+  }).catch(function(e){
+    var n=e&&e.name;
+    setStatus(n==='NotAllowedError'?'Permiso de cámara denegado. Permítelo en el navegador y vuelve a intentar.':(n==='NotFoundError'?'No se encontró ninguna cámara.':'No se pudo abrir la cámara.'),true);
+    return false;
+  });
+}
+
+/* ---------- ciclo de lectura ---------- */
+function lock(){state='locked';lockSig=signature();changeCount=0}
+function unlock(){state='scanning';votes=[];failTicks=0;lockSig=null;setGuide('');hideTag();setStatus('Siguiente carta.')}
+
+function accept(found,fromScan){
+  return buildFromCode(found.info,detectLang(found.token)).then(function(base){
+    var it=addItem(base);
+    beep();
+    if(fromScan){lock();setGuide('ok')}
+    var multi=base.options.length>1;
+    var v=itemValue(it,prefs.basis);
+    showTag([h('b',{text:'✓ '+it.name}),h('span',{class:'sub',text:it.setCode+' · '+it.rarity+(multi?' (revisa la rareza en la lista)':'')+' · ×'+it.qty+(v>0?' · '+money(v):'')})],true,fromScan?0:2500);
+    setStatus(fromScan?'Identificada. Retira la carta para la siguiente.':'Agregada.');
+  });
+}
+function scanOnce(){
+  if(video.readyState<2||!video.videoWidth)return sleep(120);
+  var whole=(failTicks%4===3), flip=(failTicks>0&&failTicks%2===1);
+  setGuide('reading');
+  var cv=grab(whole,flip);
+  return worker.recognize(cv).then(function(res){
+    var toks=extractTokens(res.data), found=null, chain=Promise.resolve();
+    toks.slice(0,3).forEach(function(tk){
+      candidateCodes(tk.token).slice(0,4).forEach(function(c){
+        chain=chain.then(function(){
+          if(found)return;
+          return lookupSet(c).then(function(info){if(info&&!found)found={info:info,conf:tk.conf,token:tk.token}});
+        });
+      });
+    });
+    return chain.then(function(){return found});
+  }).then(function(found){
+    if(!found){failTicks++;setGuide('');setStatus('Buscando el código del set…');return}
+    failTicks=0;
+    var code=found.info.set_code, now=Date.now();
+    votes.push({code:code,t:now}); votes=votes.filter(function(v){return now-v.t<4000});
+    var n=votes.filter(function(v){return v.code===code}).length;
+    if(found.conf>=88||n>=2)return accept(found,true);
+    setStatus('Confirmando '+code+'…');
+  });
+}
+function loop(){
+  if(running)return; running=true;
+  (function tick(){
+    if(!running)return;
+    var p;
+    if(state==='locked'){
+      var d=sigDiff(lockSig); changeCount=d>30?changeCount+1:0;
+      if(changeCount>=2)unlock();
+      p=sleep(140);
+    }else{
+      p=scanOnce().catch(function(e){
+        setGuide('');
+        setStatus('Sin conexión con la base de cartas. Reintentando…',true);
+        return sleep(1500);
+      }).then(function(){return sleep(20)});
+    }
+    p.then(tick);
+  })();
+}
+function pause(){running=false;state='scanning';setGuide('');$('pauseBtn').textContent='Reanudar';setStatus('Lectura en pausa.')}
+function resume(){state='scanning';votes=[];failTicks=0;$('pauseBtn').textContent='Pausar';setStatus('Muestra una carta.');loop()}
+
+$('startBtn').addEventListener('click',function(){
+  var btn=$('startBtn'); btn.disabled=true; btn.textContent='Iniciando…';
+  try{audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)()}catch(e){}
+  startCamera().then(function(ok){
+    if(!ok){btn.disabled=false;btn.textContent='Iniciar cámara';return}
+    $('start').hidden=true; $('pauseBtn').disabled=false;
+    return initWorker().then(function(){state='scanning';$('pauseBtn').textContent='Pausar';setStatus('Muestra una carta.');loop()});
+  }).catch(function(e){setStatus(e.message||'No se pudo iniciar el lector.',true);$('start').hidden=false;btn.disabled=false;btn.textContent='Reintentar'});
+});
+$('pauseBtn').addEventListener('click',function(){running?pause():resume()});
+$('camSel').addEventListener('change',function(e){startCamera(e.target.value)});
+$('manualForm').addEventListener('submit',function(e){
+  e.preventDefault();
+  var raw=$('manualIn').value; if(!raw.trim())return;
+  var cands=candidateCodes(raw.trim().toUpperCase().replace(/\s+/g,'')), found=null;
+  setStatus('Buscando '+raw.trim().toUpperCase()+'…');
+  cands.reduce(function(p,c){return p.then(function(){if(found)return;return lookupSet(c).then(function(info){if(info)found={info:info,token:raw.toUpperCase()}})})},Promise.resolve())
+  .then(function(){
+    if(!found){setStatus('No encontré ese código. Revisa que tenga el formato LOB-EN005.',true);return}
+    return accept(found,false).then(function(){$('manualIn').value=''});
+  }).catch(function(){setStatus('Sin conexión con la base de cartas.',true)});
+});
+$('basis').addEventListener('change',function(e){prefs.basis=e.target.value;save();render()});
+$('csvBtn').addEventListener('click',exportCsv);
+$('refreshBtn').addEventListener('click',refreshPrices);
+$('clearBtn').addEventListener('click',function(){
+  if(items.length&&window.confirm('¿Borrar todo el inventario? Exporta el CSV antes si lo necesitas.')){items=[];save();render()}
+});
+document.addEventListener('visibilitychange',function(){if(document.hidden&&running)pause()});
+
+load(); render();
+if(location.protocol==='http:'&&location.hostname!=='localhost'&&location.hostname!=='127.0.0.1'){
+  setStatus('La cámara solo funciona desde https o localhost. Abre el archivo directamente o súbelo a un hosting con https.',true);
+}
+})();
+</script>
+</body>
+</html>
