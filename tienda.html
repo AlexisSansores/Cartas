@@ -37,6 +37,8 @@ h1{font-size:1.3rem;margin:0;letter-spacing:-.01em}
 .stage.near{aspect-ratio:4/3}
 .guide.near{top:0;left:0;width:100%;height:100%;aspect-ratio:auto;transform:none;border-radius:0;border-width:4px;box-shadow:none}
 .guide.near .zone{display:none}
+.stage{touch-action:none}
+.guide.man{box-shadow:0 0 0 9999px rgba(0,0,0,.25);cursor:move}
 .guide.near.ok{box-shadow:0 0 0 4px rgba(18,161,80,.35) inset}
 @media (min-width:900px){.stage{aspect-ratio:4/3}}
 video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
@@ -243,7 +245,7 @@ svg.chart{width:100%;height:auto;display:block}
 
 <!-- ===================== INVENTARIO + ESCÁNER ===================== -->
 <section class="view" id="view-cap" aria-label="Captura" hidden>
-  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.18</button>
+  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.19</button>
   <div class="capgrid">
   <section class="cam" aria-label="Cámara">
     <div class="stage" id="stage">
@@ -267,6 +269,9 @@ svg.chart{width:100%;height:auto;display:block}
       <button class="btn small" type="button" id="pauseBtn" disabled>Pausar</button>
       <button class="btn small" type="button" id="distBtn">Distancia: cerca</button>
       <button class="btn small" type="button" id="confBtn">Confirmar: dudosas</button>
+      <button class="btn small" type="button" id="frameBtn" title="Arrastra el marco sobre la carta; pellizca o usa − y + para el tamaño">Marco: auto</button>
+      <button class="btn small" type="button" id="frameMinus" aria-label="Marco más chico">−</button>
+      <button class="btn small" type="button" id="framePlus" aria-label="Marco más grande">+</button>
       <select class="sel" id="camSel" aria-label="Elegir cámara" hidden></select>
     </div>
     <form class="manual" id="manualForm">
@@ -504,7 +509,7 @@ svg.chart{width:100%;height:auto;display:block}
 (function(){
 'use strict';
 
-var APP_VERSION='2.18';
+var APP_VERSION='2.19';
 var API='https://db.ygoprodeck.com/api/v7/';
 var STORAGE='escaner-cartas-v1';
 var STORE_KEYS=['tcgplayer','cardmarket','ebay','coolstuffinc'];
@@ -798,7 +803,7 @@ function setStatus(msg,isErr){statusEl.textContent=msg;statusEl.className='statu
 var lastLookups=[];
 function dbgShow(id,cv){try{var d=$(id);d.width=cv.width;d.height=cv.height;d.getContext('2d').drawImage(cv,0,0)}catch(e){}}
 function setDbg(){dbgEl.textContent=(lastCodeRaw||lastNameRaw)?('leí → código: "'+lastCodeRaw.slice(0,60)+'" · nombre: "'+lastNameRaw.slice(0,60)+'"'+(video&&video.videoWidth?' · cámara '+video.videoWidth+'×'+video.videoHeight:'')+(lastLookups.length?' · buscó: '+lastLookups.slice(0,6).join(' '):'')+(ndb.ready?' · lista de cartas OK':' · ⚠ lista de cartas SIN descargar (Ajustes → Lectura de nombres)')):''}
-function setGuide(cls){guide.className='guide'+(prefs.dist==='near'?' near':'')+(cls?' '+cls:'')}
+function setGuide(cls){guide.className='guide'+(prefs.dist==='near'?' near':'')+(frameMan?' man':'')+(cls?' '+cls:'')}
 function applyConf(){$('confBtn').textContent=prefs.confirmAll?'Confirmar: todas':'Confirmar: dudosas'}
 function applyDist(){$('stage').classList.toggle('near',prefs.dist==='near');$('distBtn').textContent=prefs.dist==='near'?'Distancia: cerca':'Distancia: lejos';setGuide('')}
 function showTag(nodes,ok,keepMs){
@@ -1750,8 +1755,8 @@ function scanOnce(){
   if(video.readyState<2||!video.videoWidth)return sleep(120);
   if(rejSig){var dd=sigDiff(rejSig); rejChange=dd>30?rejChange+1:0; if(rejChange>=2){rejected={};rejSig=null;rejChange=0}}
   /* ¿dónde está la carta? Si se detecta, las zonas se calculan sobre la carta real y no sobre el marco */
-  var gd=null; try{gd=detectNow()}catch(e){}
-  curGeo=(gd&&gd.score>=0.55&&failTicks%4!==3)?{cx:gd.cx,cy:gd.cy,w:gd.w*1.06,h:gd.h*1.06,ang:gd.ang,score:gd.score}:null; showDetected(curGeo);
+  var gd=null; if(!frameMan)try{gd=detectNow()}catch(e){}
+  curGeo=(!frameMan&&gd&&gd.score>=0.55&&failTicks%4!==3)?{cx:gd.cx,cy:gd.cy,w:gd.w*1.06,h:gd.h*1.06,ang:gd.ang,score:gd.score}:null; showDetected(curGeo);
   var nb=farStyle()?BANDS.length:BANDS_NEAR.length, bi=failTicks%nb, vr=VARIANTS[Math.floor(failTicks/nb)%VARIANTS.length];
   var flip=vr[0], adapt=vr[1], mask=vr[2]&&farStyle(), ni=failTicks;
   var sh=frameSharp(); sharpMax=Math.max(sh,sharpMax*0.97);
@@ -1870,6 +1875,61 @@ $('startBtn').addEventListener('click',function(){
     return initWorker().then(function(){state='scanning';$('pauseBtn').textContent='Pausar';setStatus('Muestra una carta.');loop();ndbDownload(false)});
   }).catch(function(e){setStatus(e.message||'No se pudo iniciar el lector.',true);$('start').hidden=false;btn.disabled=false;btn.textContent='Reintentar'});
 });
+/* ---------- marco manual: arrastra para mover, pellizca o +/− para el tamaño ---------- */
+var frameMan=false, FR={cx:0.5,cy:0.5,h:0.62};
+try{var fs_=JSON.parse(localStorage.getItem('tienda-frame')||'null');if(fs_&&fs_.h){frameMan=!!fs_.man;FR={cx:fs_.cx,cy:fs_.cy,h:fs_.h}}}catch(e){}
+function saveFrame(){try{localStorage.setItem('tienda-frame',JSON.stringify({man:frameMan,cx:FR.cx,cy:FR.cy,h:FR.h}))}catch(e){}}
+function applyFrame(){
+  var st=guide.style;
+  if(frameMan){
+    FR.h=Math.min(1.3,Math.max(0.2,FR.h)); FR.cx=Math.min(1,Math.max(0,FR.cx)); FR.cy=Math.min(1,Math.max(0,FR.cy));
+    st.left=(FR.cx*100)+'%'; st.top=(FR.cy*100)+'%'; st.height=(FR.h*100)+'%'; st.width='auto'; st.aspectRatio='59/86'; st.transform='translate(-50%,-50%)'; st.borderRadius='10px'; st.borderWidth='3px';
+    guide.classList.add('man'); showDetected(null);
+  }else{
+    st.left=st.top=st.height=st.width=st.aspectRatio=st.transform=st.borderRadius=st.borderWidth='';
+    guide.classList.remove('man');
+  }
+  $('frameBtn').textContent='Marco: '+(frameMan?'manual':'auto');
+}
+function setFrameMan(on){frameMan=on;curGeo=null;failTicks=0;applyFrame();saveFrame()}
+(function(){
+  var stg=$('stage'), P={}, g0=null;
+  function curFrame(){if(prefs.dist==='near')return {cx:0.5,cy:0.5,h:0.7};var r=stg.getBoundingClientRect(),gr=guide.getBoundingClientRect();return {cx:(gr.left+gr.width/2-r.left)/r.width,cy:(gr.top+gr.height/2-r.top)/r.height,h:gr.height/r.height}}
+  function dist(){var k=Object.keys(P);if(k.length<2)return 0;var a=P[k[0]],b=P[k[1]];return Math.hypot(a.x-b.x,a.y-b.y)}
+  function begin(){var r=stg.getBoundingClientRect();g0={cx:FR.cx,cy:FR.cy,h:FR.h,d:dist(),w:r.width,hh:r.height,moved:0,pt:null};var k=Object.keys(P);if(k.length===1)g0.pt={x:P[k[0]].x,y:P[k[0]].y}}
+  stg.addEventListener('pointerdown',function(e){
+    if(state==='idle'||e.target.closest('button,select,input'))return;
+    try{stg.setPointerCapture(e.pointerId)}catch(x){}
+    P[e.pointerId]={x:e.clientX,y:e.clientY,sx:e.clientX,sy:e.clientY}; begin();
+  });
+  stg.addEventListener('pointermove',function(e){
+    if(!P[e.pointerId]||!g0)return;
+    P[e.pointerId].x=e.clientX;P[e.pointerId].y=e.clientY;
+    var k=Object.keys(P);
+    if(k.length>=2&&g0.d>20){FR.h=g0.h*dist()/g0.d;if(!frameMan){FR.cx=g0.cx;FR.cy=g0.cy}g0.moved=99;frameMan=true;applyFrame()}
+    else if(k.length===1&&g0.pt){
+      var dx=e.clientX-g0.pt.x, dy=e.clientY-g0.pt.y;
+      if(Math.hypot(dx,dy)>6||g0.moved){
+        if(!frameMan){var cf=curFrame();g0.cx=cf.cx;g0.cy=cf.cy;g0.h=cf.h;FR.h=cf.h}
+        g0.moved=1;FR.cx=g0.cx+dx/g0.w;FR.cy=g0.cy+dy/g0.hh;frameMan=true;applyFrame();
+      }
+    }
+  });
+  function up(e){
+    if(!P[e.pointerId])return;
+    var tap=g0&&!g0.moved&&Object.keys(P).length===1;
+    delete P[e.pointerId];
+    if(tap){var r=stg.getBoundingClientRect();if(!frameMan){FR.h=curFrame().h}FR.cx=(e.clientX-r.left)/r.width;FR.cy=(e.clientY-r.top)/r.height;frameMan=true;applyFrame()}
+    saveFrame(); if(Object.keys(P).length)begin(); else g0=null;
+  }
+  stg.addEventListener('pointerup',up);stg.addEventListener('pointercancel',up);
+  stg.addEventListener('wheel',function(e){e.preventDefault();var r=stg.getBoundingClientRect();if(!frameMan){FR=curFrame()}FR.h*=e.deltaY<0?1.06:0.94;frameMan=true;applyFrame();saveFrame()},{passive:false});
+  function bump(f){if(!frameMan){FR=curFrame();frameMan=true}FR.h*=f;applyFrame();saveFrame()}
+  $('frameMinus').addEventListener('click',function(){bump(0.92)});
+  $('framePlus').addEventListener('click',function(){bump(1.08)});
+  $('frameBtn').addEventListener('click',function(){if(frameMan){setFrameMan(false);setStatus('Marco automático: la app busca la carta sola.')}else{FR=curFrame();setFrameMan(true);setStatus('Marco manual: arrástralo sobre la carta, toca para centrarlo y pellizca (o − / +) para el tamaño.')}});
+  applyFrame();
+})();
 $('distBtn').addEventListener('click',function(){prefs.dist=prefs.dist==='near'?'far':'near';failTicks=0;save();applyDist();setStatus(prefs.dist==='near'?'Modo cerca: acerca la carta; basta con ver el código o el nombre.':'Modo lejos: encaja la carta completa en el marco.')});
 $('pauseBtn').addEventListener('click',function(){running?pause():resume()});
 $('camSel').addEventListener('change',function(e){startCamera(e.target.value)});
