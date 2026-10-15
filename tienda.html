@@ -246,7 +246,7 @@ svg.chart{width:100%;height:auto;display:block}
 
 <!-- ===================== INVENTARIO + ESCÁNER ===================== -->
 <section class="view" id="view-cap" aria-label="Captura" hidden>
-  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.37</button>
+  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.38</button>
   <div class="capgrid">
   <section class="cam" aria-label="Cámara">
     <div class="stage" id="stage">
@@ -521,7 +521,7 @@ svg.chart{width:100%;height:auto;display:block}
 (function(){
 'use strict';
 
-var APP_VERSION='2.37';
+var APP_VERSION='2.38';
 var API='https://db.ygoprodeck.com/api/v7/';
 var STORAGE='escaner-cartas-v1';
 var STORE_KEYS=['tcgplayer','cardmarket','ebay','coolstuffinc'];
@@ -1416,7 +1416,10 @@ var IGNORE_ZONES=[
   {k:'tipo-y-efecto',x0:0.00,x1:1.00,y0:0.685,y1:0.905},
   {k:'atk-def',x0:0.50,x1:1.00,y0:0.905,y1:0.95}
 ];
+var trimEdges=false;
 function grabRegion(xr0,xr1,yr0,yr1,outW,flip,adapt,mask,target){
+  /* marco fijo: se recortan los bordes de la carta y lo que haya fuera (sombra, borde negro, carta vecina) */
+  if(trimEdges){xr0=Math.max(xr0,0.04);xr1=Math.min(xr1,0.955);yr0=Math.max(yr0,0.03);yr1=Math.min(yr1,0.975)}
   var wk=target||work;
   var geo=curGeo, sd=srcDims(), sx, sw, sy, sh, outH, ctx;
   if(geo){
@@ -1494,6 +1497,8 @@ function signature(){
   for(var i=0,p=0;i<out.length;i++,p+=4)out[i]=((d[p]*299+d[p+1]*587+d[p+2]*114)/1000)|0;
   return out;
 }
+var prevSig=null, moveSkips=0;
+function sigDist(a,b){var s=0;for(var i=0;i<a.length;i++)s+=Math.abs(a[i]-b[i]);return s/a.length}
 function sigDiff(a){
   var b=signature(), s=0; for(var i=0;i<a.length;i++)s+=Math.abs(a[i]-b[i]);
   return s/a.length;
@@ -1952,7 +1957,11 @@ function zoneAdjust(){
     var cv=grabRegion(ZP.x0,ZP.x1,ZP.y0,ZP.y1,ZP.w,0,0,0,zoneCv);
     curGeo=keep;
     var f=zoneFit(cv); lastFit=f;
-    if(f&&f.score>=4.0&&f.xs>=1.6){curGeo=zoneGeo(f,base);useFit=true}
+    var okFit=f&&f.score>=4.0&&f.xs>=1.6, g=okFit?zoneGeo(f,base):null;
+    /* marco fijo: la plantilla solo puede corregir movimientos chicos; si salta lejos se confía en el marco */
+    if(okFit&&frameMan){var dn=Math.hypot(g.cx-base.cx,g.cy-base.cy)/base.w, rr=g.h/base.h; if(dn>0.09||rr<0.88||rr>1.12||Math.abs(f.th)>4.5)okFit=false}
+    if(okFit){curGeo=g;useFit=true}
+    else if(frameMan){curGeo=base;useFit=true}
   }catch(e){useFit=false}
   return useFit;
 }
@@ -1977,18 +1986,28 @@ function scanOnce(){
   if(video.readyState<2||!video.videoWidth)return sleep(120);
   if(rejSig){var dd=sigDiff(rejSig); rejChange=dd>30?rejChange+1:0; if(rejChange>=2){rejected={};rejSig=null;rejChange=0}}
   /* ¿dónde está la carta? Si se detecta, las zonas se calculan sobre la carta real y no sobre el marco */
+  trimEdges=false;
   var gd=null; if(!frameMan)try{gd=detectNow()}catch(e){}
   curGeo=(!frameMan&&gd&&gd.score>=0.55&&failTicks%4!==3)?{cx:gd.cx,cy:gd.cy,w:gd.w*1.06,h:gd.h*1.06,ang:gd.ang,score:gd.score}:null;
   if(frameMan||!curGeo)zoneAdjust(); else useFit=false;
   showDetected(curGeo);
   var nb=useFit?BANDS_FIT.length:(farStyle()?BANDS.length:BANDS_NEAR.length), bi=failTicks%nb, vr=VARIANTS[Math.floor(failTicks/nb)%VARIANTS.length];
   var flip=vr[0], adapt=vr[1], mask=vr[2]&&farStyle(), ni=failTicks;
+  if(frameMan){
+    /* marco fijo: si la carta se está moviendo (la cambian, la acomodan) se espera a que quede quieta */
+    var sg=signature(), mv=prevSig?sigDist(prevSig,sg):0; prevSig=sg;
+    if(mv>9&&moveSkips<6){moveSkips++;setStatus('Carta en movimiento… espera un momento.');return sleep(110)}
+    moveSkips=0;
+  }
   var sh=frameSharp(); sharpMax=Math.max(sh,sharpMax*0.97);
   if(sh<sharpMax*0.6&&blurSkips<2){blurSkips++;setStatus('Imagen borrosa: espera a que enfoque o aleja un poco la carta.');if(Date.now()-lastAutoFocus>9000)refocus(true);return sleep(110)}
   blurSkips=0;
   setGuide('reading');
+  trimEdges=frameMan&&useFit;
   var pn=workerN?nameStep(flip,ni).catch(function(){return null}):null;
-  return Promise.all([codeStep(bi,flip,adapt,mask),pn]).then(function(rs){
+  var pAll=Promise.all([codeStep(bi,flip,adapt,mask),pn]);
+  trimEdges=false;
+  return pAll.then(function(rs){
     var found=rs[0], nr=pn?rs[1]:undefined;
     setDbg();
     if(found&&rejected[found.info.id])found=null;
@@ -2139,7 +2158,7 @@ function applyFrame(){
     st.left=st.top=st.height=st.width=st.aspectRatio=st.transform=st.borderRadius=st.borderWidth='';
     guide.classList.remove('man');
   }
-  $('frameBtn').textContent='Marco: '+(frameMan?'manual':'auto');
+  $('frameBtn').textContent='Marco: '+(frameMan?'fijo':'auto');
 }
 function setFrameMan(on){frameMan=on;curGeo=null;failTicks=0;applyFrame();saveFrame()}
 (function(){
@@ -2177,7 +2196,7 @@ function setFrameMan(on){frameMan=on;curGeo=null;failTicks=0;applyFrame();saveFr
   function bump(f){if(!frameMan){FR=curFrame();frameMan=true}FR.h*=f;applyFrame();saveFrame()}
   $('frameMinus').addEventListener('click',function(){bump(0.92)});
   $('framePlus').addEventListener('click',function(){bump(1.08)});
-  $('frameBtn').addEventListener('click',function(){if(frameMan){setFrameMan(false);setStatus('Marco automático: la app busca la carta sola.')}else{FR=curFrame();setFrameMan(true);setStatus('Marco manual: arrástralo sobre la carta, toca para centrarlo y pellizca (o − / +) para el tamaño.')}});
+  $('frameBtn').addEventListener('click',function(){if(frameMan){setFrameMan(false);setStatus('Marco automático: la app busca la carta sola.')}else{FR=curFrame();setFrameMan(true);setStatus('Marco fijo: acomoda el marco donde pondrás las cartas (arrastra, toca para centrar, pellizca o − / +). Recorta bordes y sombras y espera a que la carta quede quieta.')}});
   applyFrame();
 })();
 $('distBtn').addEventListener('click',function(){prefs.dist=prefs.dist==='near'?'far':'near';failTicks=0;save();applyDist();setStatus(prefs.dist==='near'?'Modo cerca: acerca la carta; basta con ver el código o el nombre.':'Modo lejos: encaja la carta completa en el marco.')});
