@@ -241,7 +241,7 @@ svg.chart{width:100%;height:auto;display:block}
 
 <!-- ===================== INVENTARIO + ESCÁNER ===================== -->
 <section class="view" id="view-cap" aria-label="Captura" hidden>
-  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.9</button>
+  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.10</button>
   <div class="capgrid">
   <section class="cam" aria-label="Cámara">
     <div class="stage" id="stage">
@@ -501,7 +501,7 @@ svg.chart{width:100%;height:auto;display:block}
 (function(){
 'use strict';
 
-var APP_VERSION='2.9';
+var APP_VERSION='2.10';
 var API='https://db.ygoprodeck.com/api/v7/';
 var STORAGE='escaner-cartas-v1';
 var STORE_KEYS=['tcgplayer','cardmarket','ebay','coolstuffinc'];
@@ -1727,6 +1727,7 @@ function scanOnce(){
         }
         return askCode(found);
       }
+      if(n>=2)return askCode(found,true);
       setStatus('Confirmando '+code+'…');
       return;
     }
@@ -1753,7 +1754,8 @@ function handleName(r){
     nameVotes.push({id:top.card.id,t:now}); nameVotes=nameVotes.filter(function(v){return now-v.t<5000});
     var n=nameVotes.filter(function(v){return v.id===top.card.id}).length;
     if(top.s>=0.93||n>=2){failTicks=0;return decide(top)}
-    setStatus('Confirmando "'+top.card.name+'"…');
+    if(weakHit(top.card.id))freeze(r.ranked.filter(function(x){return x.s>=top.s-0.2}).slice(0,3),'¿Es esta carta? (leí "'+r.raw+'")');
+    else setStatus('Confirmando "'+top.card.name+'"…');
   }else if(top.s<SUGGEST&&top.s>=0.55&&(r.ranked.length<3||top.s-r.ranked[2].s>=0.18)){
     /* lectura sucia pero con 1–2 candidatas claramente por encima del resto: se propone, tú confirmas */
     if(weakHit(top.card.id))freeze(r.ranked.filter(function(x){return x.s>=top.s-0.2}).slice(0,4),'Lectura dudosa. ¿Es alguna de estas? (leí "'+r.raw+'")');
