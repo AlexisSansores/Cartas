@@ -245,7 +245,7 @@ svg.chart{width:100%;height:auto;display:block}
 
 <!-- ===================== INVENTARIO + ESCÁNER ===================== -->
 <section class="view" id="view-cap" aria-label="Captura" hidden>
-  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.26</button>
+  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.27</button>
   <div class="capgrid">
   <section class="cam" aria-label="Cámara">
     <div class="stage" id="stage">
@@ -512,7 +512,7 @@ svg.chart{width:100%;height:auto;display:block}
 (function(){
 'use strict';
 
-var APP_VERSION='2.26';
+var APP_VERSION='2.27';
 var API='https://db.ygoprodeck.com/api/v7/';
 var STORAGE='escaner-cartas-v1';
 var STORE_KEYS=['tcgplayer','cardmarket','ebay','coolstuffinc'];
@@ -523,7 +523,7 @@ var NAME_WL="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 -'.,
 var BANDS=[[0.675,0.73,0.50,1],[0.68,0.80,0.40,1],[0.89,0.97,0.03,0.55],[0.62,0.74,0.40,1],[0.88,1,0.30,1],[0.60,0.84],[0.52,0.78],[0.68,0.92],[0,1],[0.88,1,0.30,1]];
 /* [invertir, umbral adaptativo, ignorar zonas] */
 var VARIANTS=[[0,0,1],[0,0,0],[1,0,1],[0,1,1],[1,0,0],[0,1,0],[1,1,1],[1,1,0]];
-var BANDS_FIT=[[0.707,0.765,0.45,0.97],[0.69,0.79,0.30,1],[0.725,0.752,0.50,0.95],[0.65,0.85,0.20,1],[0.89,0.97,0.03,0.55],[0.62,0.74,0.40,1],[0.88,1,0.30,1],[0.60,0.84],[0.68,0.92]];
+var BANDS_FIT=[[0.672,0.735,0.45,0.97],[0.69,0.76,0.45,0.97],[0.65,0.78,0.30,1],[0.707,0.765,0.45,0.97],[0.62,0.85,0.20,1],[0.89,0.97,0.03,0.55],[0.62,0.74,0.40,1],[0.88,1,0.30,1],[0.60,0.84],[0.68,0.92]];
 var BANDS_NEAR=[[0.675,0.73,0.50,1],[0.68,0.80,0.40,1],[0.89,0.97,0.03,0.55],[0.5,1],[0.62,0.74,0.40,1],[0.25,0.75],[0,1],[0.7,1],[0.35,0.85],[0.88,1,0.30,1]];
 var NAME_FAR=[[0.02,0.105],[0.0,0.09],[0.035,0.12],[0.01,0.11]];
 var NAME_FIT=[[0.04,0.125],[0.02,0.105],[0.055,0.14],[0.0,0.09]];
@@ -1871,7 +1871,7 @@ function handleName(r){
   }
   if(!r||!r.ranked.length){weak=0;setGuide('');setStatus('Buscando el código o el nombre…');return}
   var top=r.ranked[0], second=r.ranked[1], now=Date.now();
-  if(top.s>=AUTO&&(!second||top.s-second.s>=0.06)){
+  if(top.s>=AUTO&&(!second||top.s-second.s>=0.06||(top.s>=0.99&&top.s-second.s>=0.03))){
     weak=0;
     nameVotes.push({id:top.card.id,t:now}); nameVotes=nameVotes.filter(function(v){return now-v.t<5000});
     var n=nameVotes.filter(function(v){return v.id===top.card.id}).length;
@@ -1883,7 +1883,7 @@ function handleName(r){
     if(weakHit(top.card.id))freeze(r.ranked.filter(function(x){return x.s>=Math.max(0.4,top.s-0.2)}).slice(0,4),'Lectura dudosa. ¿Es alguna de estas? (leí "'+r.raw+'")');
     else setStatus('Leyendo… ('+Math.round(top.s*100)+'% de seguridad)');
   }else if(top.s>=SUGGEST){
-    if(weakHit(top.card.id))freeze(r.ranked.slice(0,5),'Seguridad entre 85% y 88%. ¿Es alguna de estas? (leí "'+r.raw+'")');
+    if(weakHit(top.card.id))freeze(r.ranked.slice(0,5),(top.s>=AUTO?'Hay cartas muy parecidas. ¿Cuál es?':'Seguridad entre 85% y 88%. ¿Es alguna de estas?')+' (leí "'+r.raw+'")');
     else setStatus('Leyendo… ('+Math.round(top.s*100)+'% de seguridad)');
   }else{
     weak=Math.max(0,weak-1);setGuide('');setStatus('Buscando el código o el nombre…');
