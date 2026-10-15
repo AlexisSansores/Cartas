@@ -241,7 +241,7 @@ svg.chart{width:100%;height:auto;display:block}
 
 <!-- ===================== INVENTARIO + ESCÁNER ===================== -->
 <section class="view" id="view-cap" aria-label="Captura" hidden>
-  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.3</button>
+  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.4</button>
   <div class="capgrid">
   <section class="cam" aria-label="Cámara">
     <div class="stage" id="stage">
@@ -501,7 +501,7 @@ svg.chart{width:100%;height:auto;display:block}
 (function(){
 'use strict';
 
-var APP_VERSION='2.3';
+var APP_VERSION='2.4';
 var API='https://db.ygoprodeck.com/api/v7/';
 var STORAGE='escaner-cartas-v1';
 var STORE_KEYS=['tcgplayer','cardmarket','ebay','coolstuffinc'];
@@ -513,10 +513,11 @@ var BANDS=[[0.60,0.84],[0.52,0.78],[0.68,0.92],[0,1]];
 /* [invertir, umbral adaptativo, ignorar zonas] */
 var VARIANTS=[[0,0,1],[0,0,0],[1,0,1],[0,1,1],[1,0,0],[0,1,0],[1,1,1],[1,1,0]];
 var BANDS_NEAR=[[0.5,1],[0.25,0.75],[0,1],[0.7,1],[0.35,0.85]];
+var NAME_FAR=[[0.02,0.105],[0.0,0.09],[0.035,0.12],[0.01,0.11]];
 var NAME_NEAR=[[0,0.16],[0.08,0.24],[0.16,0.32],[0.04,0.20],[0.24,0.40],[0.12,0.28]];
 
 // <pure>
-function fixDigits(t){return t.replace(/O/g,'0').replace(/[IL]/g,'1').replace(/S/g,'5').replace(/B/g,'8').replace(/Z/g,'2').replace(/G/g,'6')}
+function fixDigits(t){return t.replace(/[OQD]/g,'0').replace(/[IL]/g,'1').replace(/S/g,'5').replace(/B/g,'8').replace(/Z/g,'2').replace(/G/g,'6')}
 function candidateCodes(token){
   var t=String(token||'').toUpperCase().replace(/[^A-Z0-9-]/g,'');
   var out=[], seen={};
@@ -530,7 +531,7 @@ function candidateCodes(token){
     else if(m3){pre=m3[1];suf=m3[2]}
     else return out;
   }
-  if(!/[0-9]/.test(suf))return out;
+  if(!/[0-9]/.test(fixDigits(suf.slice(-3))))return out;
   var preVars=[pre]; if(/0/.test(pre))preVars.push(pre.replace(/0/g,'O'));
   var last3=suf.slice(-3), head=suf.slice(0,-3);
   var tails=[last3], fixed=fixDigits(last3); if(fixed!==last3)tails.push(fixed);
@@ -1649,7 +1650,7 @@ window.__tienda={ndbBuild:ndbBuild,ndbSearch:ndbSearch,tightLine:tightLine,detec
 function nameStep(flip,ni){
   var cv;
   if(!farStyle()){var nb=NAME_NEAR[ni%NAME_NEAR.length];cv=grabRegion(0.04,0.96,nb[0],nb[1],1100,flip,0,0,workN)}
-  else cv=grabRegion(0.03,0.83,0.02,0.105,1000,flip,0,0,workN);
+  else{var nf=NAME_FAR[Math.floor(ni/2)%NAME_FAR.length];cv=grabRegion(0.03,0.90,nf[0],nf[1],1000,flip,0,0,workN)}
   if(ni%2===0){var t=null;try{t=tightLine(cv,tightCv)}catch(e){}if(t)cv=t}   /* lectura alterna: recortada y sin recortar */
   return ocrName(cv).then(function(res){
     var raw=cleanName(res.data.text); lastNameRaw=raw;
@@ -1689,7 +1690,7 @@ function scanOnce(){
   if(rejSig){var dd=sigDiff(rejSig); rejChange=dd>30?rejChange+1:0; if(rejChange>=2){rejected={};rejSig=null;rejChange=0}}
   /* ¿dónde está la carta? Si se detecta, las zonas se calculan sobre la carta real y no sobre el marco */
   var gd=null; try{gd=detectNow()}catch(e){}
-  curGeo=(gd&&gd.score>=0.55&&failTicks%4!==3)?gd:null; showDetected(curGeo);
+  curGeo=(gd&&gd.score>=0.55&&failTicks%4!==3)?{cx:gd.cx,cy:gd.cy,w:gd.w*1.06,h:gd.h*1.06,ang:gd.ang,score:gd.score}:null; showDetected(curGeo);
   var nb=farStyle()?BANDS.length:BANDS_NEAR.length, bi=failTicks%nb, vr=VARIANTS[Math.floor(failTicks/nb)%VARIANTS.length];
   var flip=vr[0], adapt=vr[1], mask=vr[2]&&farStyle(), ni=failTicks;
   var sh=frameSharp(); sharpMax=Math.max(sh,sharpMax*0.97);
