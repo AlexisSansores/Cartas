@@ -241,7 +241,7 @@ svg.chart{width:100%;height:auto;display:block}
 
 <!-- ===================== INVENTARIO + ESCÁNER ===================== -->
 <section class="view" id="view-cap" aria-label="Captura" hidden>
-  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.1</button>
+  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.3</button>
   <div class="capgrid">
   <section class="cam" aria-label="Cámara">
     <div class="stage" id="stage">
@@ -501,7 +501,7 @@ svg.chart{width:100%;height:auto;display:block}
 (function(){
 'use strict';
 
-var APP_VERSION='2.1';
+var APP_VERSION='2.3';
 var API='https://db.ygoprodeck.com/api/v7/';
 var STORAGE='escaner-cartas-v1';
 var STORE_KEYS=['tcgplayer','cardmarket','ebay','coolstuffinc'];
@@ -655,7 +655,21 @@ function nameScore(raw,name){
   /* lectura cortada: lo leído es el inicio o un tramo del nombre */
   var cov=Math.min(1,a.length/b.length);
   var trunc=a.length>=6?(1-semiLev(a,b)/a.length)*Math.sqrt(cov)*0.95:0;
-  return Math.max(full,contain,trunc);
+  var seg=0;
+  if(b.length>=18||/ - |: |, /.test(String(name))){
+    /* nombres largos con subtítulo ("X - Y", "X, Y"): basta con leer bien una parte; se ignora la basura al final de la lectura */
+    var parts=String(name).split(/ - |: |, /).map(normName).filter(function(x){return x.length>=12});
+    var tk=a.split(' '), k, ra, pi, sc;
+    for(k=0;k<=4&&tk.length-k>=2;k++){
+      ra=tk.slice(0,tk.length-k).join(' ');
+      if(ra.length<8)break;
+      for(pi=0;pi<parts.length;pi++){
+        sc=(1-lev(ra,parts[pi])/Math.max(ra.length,parts[pi].length));
+        if(sc>seg)seg=sc;
+      }
+    }
+  }
+  return Math.max(full,contain,trunc,seg);
 }
 function nameQueries(raw){
   var t=cleanName(raw), out=[];
@@ -680,7 +694,7 @@ function storeAvg(stores){
 function itemValue(it,basis){
   var a=it.printPrice>0?it.printPrice:0, b=storeAvg(it.stores);
   var t=it.stores&&it.stores.tcgplayer>0?it.stores.tcgplayer:0;
-  if(basis==='tcg')return t||a||b;
+  if(basis==='tcg')return a||t||b;
   return basis==='stores'?(b||a):(a||b);
 }
 function csvCell(v){
