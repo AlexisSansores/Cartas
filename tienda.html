@@ -246,7 +246,7 @@ svg.chart{width:100%;height:auto;display:block}
 
 <!-- ===================== INVENTARIO + ESCÁNER ===================== -->
 <section class="view" id="view-cap" aria-label="Captura" hidden>
-  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.36</button>
+  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.37</button>
   <div class="capgrid">
   <section class="cam" aria-label="Cámara">
     <div class="stage" id="stage">
@@ -276,6 +276,13 @@ svg.chart{width:100%;height:auto;display:block}
       <button class="btn small" type="button" id="focusBtn" title="Pide a la cámara que vuelva a enfocar">🎯 Enfocar</button>
       <button class="btn small" type="button" id="reportBtn" title="Guarda una imagen con la lectura actual para mandarla">📸 Reporte</button>
       <select class="sel" id="camSel" aria-label="Elegir cámara" hidden></select>
+    </div>
+    <div class="camrow" id="zoomRow" hidden>
+      <span style="font-size:13px">🔍 Zoom</span>
+      <button class="btn small" type="button" id="zoomMinus" aria-label="Menos zoom">−</button>
+      <input type="range" id="zoomRange" aria-label="Zoom de la cámara" style="flex:1;min-width:120px">
+      <button class="btn small" type="button" id="zoomPlus" aria-label="Más zoom">+</button>
+      <span id="zoomVal" style="font-size:13px;min-width:34px;text-align:right">1×</span>
     </div>
     <form class="manual" id="manualForm">
       <input class="txt" id="manualIn" type="text" placeholder="Código (LOB-EN005) o nombre de la carta" autocomplete="off" aria-label="Código o nombre">
@@ -514,7 +521,7 @@ svg.chart{width:100%;height:auto;display:block}
 (function(){
 'use strict';
 
-var APP_VERSION='2.36';
+var APP_VERSION='2.37';
 var API='https://db.ygoprodeck.com/api/v7/';
 var STORAGE='escaner-cartas-v1';
 var STORE_KEYS=['tcgplayer','cardmarket','ebay','coolstuffinc'];
@@ -1536,7 +1543,7 @@ function startCamera(deviceId){
       var t=stream.getVideoTracks()[0], caps=t.getCapabilities&&t.getCapabilities();
       if(caps&&caps.focusMode&&caps.focusMode.indexOf('continuous')>-1)t.applyConstraints({advanced:[{focusMode:'continuous'}]}).catch(function(){});
     }catch(e){}
-    listDevices(); return true;
+    initZoom(); listDevices(); return true;
   }).catch(function(e){
     var n=e&&e.name;
     setStatus(n==='NotAllowedError'?'Permiso de cámara denegado. Permítelo en el navegador y vuelve a intentar.':(n==='NotFoundError'?'No se encontró ninguna cámara.':'No se pudo abrir la cámara.'),true);
@@ -1545,13 +1552,40 @@ function startCamera(deviceId){
 }
 
 
+/* ---------- zoom de la cámara ---------- */
+var zoomCaps=null;
+function initZoom(){
+  var row=$('zoomRow'); if(!row)return;
+  zoomCaps=null; row.hidden=true;
+  try{
+    var t=stream&&stream.getVideoTracks()[0], c=t&&t.getCapabilities&&t.getCapabilities();
+    if(!c||!c.zoom||!(c.zoom.max>c.zoom.min))return;
+    zoomCaps={min:c.zoom.min,max:c.zoom.max,step:c.zoom.step||0.1};
+    var rg=$('zoomRange'); rg.min=c.zoom.min; rg.max=c.zoom.max; rg.step=zoomCaps.step;
+    var saved=NaN; try{saved=parseFloat(localStorage.getItem('tienda_zoom'))}catch(e){}
+    var z=isNaN(saved)?(t.getSettings&&t.getSettings().zoom)||c.zoom.min:saved;
+    row.hidden=false; setZoom(z);
+  }catch(e){}
+}
+function setZoom(z){
+  if(!zoomCaps)return;
+  z=Math.min(zoomCaps.max,Math.max(zoomCaps.min,+z||zoomCaps.min));
+  $('zoomRange').value=z; $('zoomVal').textContent=(Math.round(z*10)/10)+'×';
+  try{localStorage.setItem('tienda_zoom',String(z))}catch(e){}
+  var t=stream&&stream.getVideoTracks()[0]; if(!t)return;
+  t.applyConstraints({advanced:[{zoom:z}]}).then(function(){sharpMax=0;blurSkips=0;curGeo=null}).catch(function(){});
+}
+function zoomInfo(){
+  try{var t=stream&&stream.getVideoTracks()[0],st=t&&t.getSettings?t.getSettings():{};return zoomCaps?'zoom: '+(st.zoom||'?')+'× (de '+zoomCaps.min+' a '+zoomCaps.max+')':'zoom: no disponible'}catch(e){return 'zoom: ?'}
+}
+
 /* ---------- enfoque de la cámara ---------- */
 var lastAutoFocus=0;
 function focusInfo(){
   try{
     var t=stream&&stream.getVideoTracks()[0]; if(!t)return 'enfoque: sin cámara';
     var c=t.getCapabilities?t.getCapabilities():{}, st=t.getSettings?t.getSettings():{};
-    return 'enfoque: '+((c.focusMode&&c.focusMode.length)?c.focusMode.join('/'):'no controlable')+(st.focusMode?' (ahora '+st.focusMode+')':'')+(c.pointsOfInterest?' +punto':'');
+    return 'enfoque: '+((c.focusMode&&c.focusMode.length)?c.focusMode.join('/'):'no controlable')+(st.focusMode?' (ahora '+st.focusMode+')':'')+(c.pointsOfInterest?' +punto':'')+' · '+zoomInfo();
   }catch(e){return 'enfoque: ?'}
 }
 function refocus(silent){
@@ -2264,6 +2298,9 @@ function sendReport(){
 }
 $('reportBtn').addEventListener('click',sendReport);
 $('focusBtn').addEventListener('click',function(){refocus(false)});
+$('zoomRange').addEventListener('input',function(){setZoom(this.value)});
+$('zoomMinus').addEventListener('click',function(){if(zoomCaps)setZoom(+$('zoomRange').value-Math.max(zoomCaps.step,(zoomCaps.max-zoomCaps.min)/10))});
+$('zoomPlus').addEventListener('click',function(){if(zoomCaps)setZoom(+$('zoomRange').value+Math.max(zoomCaps.step,(zoomCaps.max-zoomCaps.min)/10))});
 window.__tienda&&(window.__tienda.buildReport=buildReport);
 /* ---------- dictado del código por voz ---------- */
 var SPK_D={cero:'0',uno:'1',una:'1',un:'1',dos:'2',tres:'3',cuatro:'4',cinco:'5',seis:'6',siete:'7',ocho:'8',nueve:'9',diez:'10',once:'11',doce:'12',trece:'13',catorce:'14',quince:'15',dieciseis:'16',diecisiete:'17',dieciocho:'18',diecinueve:'19',veinte:'20',veintiuno:'21',veintidos:'22',veintitres:'23',veinticuatro:'24',veinticinco:'25',veintiseis:'26',veintisiete:'27',veintiocho:'28',veintinueve:'29',treinta:'30'};
