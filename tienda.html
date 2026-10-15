@@ -245,7 +245,7 @@ svg.chart{width:100%;height:auto;display:block}
 
 <!-- ===================== INVENTARIO + ESCÁNER ===================== -->
 <section class="view" id="view-cap" aria-label="Captura" hidden>
-  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.27</button>
+  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.28</button>
   <div class="capgrid">
   <section class="cam" aria-label="Cámara">
     <div class="stage" id="stage">
@@ -512,7 +512,7 @@ svg.chart{width:100%;height:auto;display:block}
 (function(){
 'use strict';
 
-var APP_VERSION='2.27';
+var APP_VERSION='2.28';
 var API='https://db.ygoprodeck.com/api/v7/';
 var STORAGE='escaner-cartas-v1';
 var STORE_KEYS=['tcgplayer','cardmarket','ebay','coolstuffinc'];
@@ -1871,7 +1871,7 @@ function handleName(r){
   }
   if(!r||!r.ranked.length){weak=0;setGuide('');setStatus('Buscando el código o el nombre…');return}
   var top=r.ranked[0], second=r.ranked[1], now=Date.now();
-  if(top.s>=AUTO&&(!second||top.s-second.s>=0.06||(top.s>=0.99&&top.s-second.s>=0.03))){
+  if(top.s>=AUTO&&(!second||top.s-second.s>=0.06||(top.s>=0.995&&second.s<0.995))){
     weak=0;
     nameVotes.push({id:top.card.id,t:now}); nameVotes=nameVotes.filter(function(v){return now-v.t<5000});
     var n=nameVotes.filter(function(v){return v.id===top.card.id}).length;
