@@ -246,7 +246,7 @@ svg.chart{width:100%;height:auto;display:block}
 
 <!-- ===================== INVENTARIO + ESCÁNER ===================== -->
 <section class="view" id="view-cap" aria-label="Captura" hidden>
-  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.42</button>
+  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.43</button>
   <div class="capgrid">
   <section class="cam" aria-label="Cámara">
     <div class="stage" id="stage">
@@ -524,7 +524,7 @@ svg.chart{width:100%;height:auto;display:block}
 (function(){
 'use strict';
 
-var APP_VERSION='2.42';
+var APP_VERSION='2.43';
 var API='https://db.ygoprodeck.com/api/v7/';
 var STORAGE='escaner-cartas-v1';
 var STORE_KEYS=['tcgplayer','cardmarket','ebay','coolstuffinc'];
@@ -1699,9 +1699,10 @@ function ocrCodeBoth(cv,mode){
   });
 }
 function codeStep(bi,flip,adapt,mask){
-  var B=useFit?(dynBand?[dynBand].concat(BANDS_FIT):BANDS_FIT):(farStyle()?BANDS:BANDS_NEAR), b=B[bi%B.length], whole=(b[1]-b[0])>0.9;
+  var B=useFit?(dynBand?dynBand.concat(BANDS_FIT):BANDS_FIT):(farStyle()?BANDS:BANDS_NEAR), b=B[bi%B.length], whole=(b[1]-b[0])>0.9;
   var narrow=b.length>2; lastBandRect=b;
   var cv=grabRegion(narrow?b[2]:0,narrow?b[3]:1,b[0],b[1],whole?1400:1100,flip,adapt,mask&&!narrow);
+  if(narrow&&dynBand&&dynBand.indexOf(b)>-1){var tg=null;try{tg=tightLine(cv,tightCv2)}catch(e){}if(tg)cv=tg}   /* franja anclada: se recorta al texto (sin bordes) */
   dbgShow('dbgCode',cv);
   var hist={b:b.slice(),c:null,t:''};
   try{var cc=document.createElement('canvas'),kk=Math.min(1,700/cv.width);cc.width=Math.round(cv.width*kk);cc.height=Math.round(cv.height*kk);cc.getContext('2d').drawImage(cv,0,0,cc.width,cc.height);hist.c=cc;codeHist.push(hist);if(codeHist.length>4)codeHist.shift()}catch(e){}
@@ -1874,7 +1875,7 @@ function ndbDownload(force){
     return idbSet('names',{ts:ndb.ts,rows:rows});
   }).catch(function(e){ndb.msg='No se pudo descargar la lista de cartas ('+((e&&e.message)||e)+'). Se reintentará.'}).then(function(){ndb.busy=false;ndbUi()});
 }
-window.__tienda={anchorBest:anchorBest,lock:lock,getState:function(){return state},codeAnchor:codeAnchor,anchDbg:function(){return anchDbg},zoneTest:function(base){curGeo=base;var cv=grabRegion(ZP.x0,ZP.x1,ZP.y0,ZP.y1,ZP.w,0,0,0,zoneCv);curGeo=null;var f=zoneFit(cv);var g=f&&zoneGeo(f,base);return {f:f,g:g}},ndbBuild:ndbBuild,ndbSearch:ndbSearch,tightLine:tightLine,detectNow:detectNow,setSrc:function(e){srcEl=e},updateApp:updateApp,setGeo:function(g){curGeo=g},grab:function(a,b,c,d,w,f,ad,m){return grabRegion(a,b,c,d,w,f,ad,m,workN)}};
+window.__tienda={stripTight:function(b,flip,adapt){var cv=grabRegion(b[2],b[3],b[0],b[1],1100,flip||0,adapt||0,0,workN);var t=null;try{t=tightLine(cv,tightCv2)}catch(e){}return {raw:cv.toDataURL(),tight:t?t.toDataURL():null}},anchorBest:anchorBest,lock:lock,getState:function(){return state},codeAnchor:codeAnchor,anchDbg:function(){return anchDbg},zoneTest:function(base){curGeo=base;var cv=grabRegion(ZP.x0,ZP.x1,ZP.y0,ZP.y1,ZP.w,0,0,0,zoneCv);curGeo=null;var f=zoneFit(cv);var g=f&&zoneGeo(f,base);return {f:f,g:g}},ndbBuild:ndbBuild,ndbSearch:ndbSearch,tightLine:tightLine,detectNow:detectNow,setSrc:function(e){srcEl=e},updateApp:updateApp,setGeo:function(g){curGeo=g},grab:function(a,b,c,d,w,f,ad,m){return grabRegion(a,b,c,d,w,f,ad,m,workN)}};
 var invCv=document.createElement('canvas'), invCv2=document.createElement('canvas');
 function invertCv(cv,tg){
   var invCv=tg||window.__invDefault||(window.__invDefault=document.createElement('canvas'));
@@ -1967,7 +1968,7 @@ function zoneGeo(f,base){
 }
 /* ancla del código: entre el borde de abajo del arte y el borde de arriba del cuadro de texto hay una franja con el código.
    Se buscan esas dos líneas largas y horizontales y se lee solo lo que hay entre ellas (sin bordes ni texto del efecto) */
-var anchCv=document.createElement('canvas'), dynBand=null, anchDbg=null, anchScore=0, anchAng=0, anchLast=0;
+var tightCv2=document.createElement('canvas'), anchCv=document.createElement('canvas'), dynBand=null, anchDbg=null, anchScore=0, anchAng=0, anchLast=0;
 function codeAnchor(){
   var A0=0.60,A1=0.88, cv=grabRegion(0.2,0.8,A0,A1,700,0,0,0,anchCv), W=cv.width, H=cv.height;
   var d=cv.getContext('2d',{willReadFrequently:true}).getImageData(0,0,W,H).data, g=new Uint8Array(W*H), i, y, x;
@@ -1987,13 +1988,20 @@ function codeAnchor(){
   anchDbg={rows:Array.prototype.slice.call(rows),cl:cl,H:H};
   anchScore=strict;
   var fr=function(py){return A0+py/H*(A1-A0)};
+  var out=[];
+  function add(y0,y1){y0=Math.max(0,y0);y1=Math.min(1,y1);if(y1-y0<0.012)return;for(var q=0;q<out.length;q++)if(Math.abs(out[q][0]-y0)<0.008&&Math.abs(out[q][1]-y1)<0.008)return;out.push([y0,y1,0.40,0.985])}
+  /* 1) el espacio entre dos líneas largas (borde de abajo del arte y borde de arriba del cuadro de texto) */
   for(i=0;i+1<cl.length;i++){
     var y0=fr(cl[i].b+1), y1=fr(cl[i+1].a-1), h=y1-y0;
-    if(fr(cl[i].a)>=0.62&&h>=0.012&&h<=0.06&&cl[i].pk>=0.92&&cl[i+1].pk>=0.92)return [Math.max(0,y0-0.001),Math.min(1,y1+0.001),0.40,0.985];
+    if(fr(cl[i].a)>=0.62&&h>=0.012&&h<=0.06&&cl[i].pk>=0.92&&cl[i+1].pk>=0.92)add(y0-0.001,y1+0.001);
   }
-  /* si solo se ve la línea de arriba del cuadro de texto, el código está justo encima */
-  for(i=0;i<cl.length;i++)if(fr(cl[i].a)>=0.66){var t=fr(cl[i].a);return [t-0.034,t-0.003,0.40,0.985]}
-  return null;
+  /* 2) justo debajo y justo encima de cada línea larga: el código está pegado a una de ellas */
+  for(i=0;i<cl.length&&out.length<6;i++){
+    var ta=fr(cl[i].a), tb=fr(cl[i].b);
+    if(ta<0.62)continue;
+    add(tb+0.001,tb+0.036); add(ta-0.036,ta-0.001);
+  }
+  return out.length?out.slice(0,6):null;
 }
 /* carta chueca en la mano: se prueban varios giros y se queda el que deja más rectas las líneas del cuadro de texto */
 function anchorBest(){
@@ -2060,15 +2068,9 @@ function scanOnce(){
   if(frameMan||!curGeo)zoneAdjust(); else useFit=false;
   showDetected(curGeo);
   dynBand=null; if(frameMan&&useFit){try{dynBand=anchorBest().b}catch(e){dynBand=null}}
-  var nb=useFit?BANDS_FIT.length+(dynBand?1:0):(farStyle()?BANDS.length:BANDS_NEAR.length), bi=failTicks%nb, vr=VARIANTS[Math.floor(failTicks/nb)%VARIANTS.length];
-  if(dynBand)bi=(failTicks%2===0)?0:1+(Math.floor(failTicks/2)%BANDS_FIT.length);   /* una de cada dos lecturas usa la franja anclada */
+  var nb=useFit?BANDS_FIT.length+(dynBand?dynBand.length:0):(farStyle()?BANDS.length:BANDS_NEAR.length), bi=failTicks%nb, vr=VARIANTS[Math.floor(failTicks/nb)%VARIANTS.length];
+  if(dynBand){var dn=dynBand.length; bi=(failTicks%2===0)?(Math.floor(failTicks/2)%dn):dn+(Math.floor(failTicks/2)%BANDS_FIT.length)}   /* una de cada dos lecturas usa las franjas ancladas */
   var flip=vr[0], adapt=vr[1], mask=vr[2]&&farStyle(), ni=failTicks;
-  if(frameMan){
-    /* marco fijo: si la carta se está moviendo (la cambian, la acomodan) se espera a que quede quieta */
-    var sg=signature(), mv=prevSig?sigDist(prevSig,sg):0; prevSig=sg;
-    if(mv>16&&moveSkips<3){moveSkips++;setStatus('Carta en movimiento… espera un momento.');return sleep(110)}
-    moveSkips=0;
-  }
   var sh=frameSharp(); sharpMax=Math.max(sh,sharpMax*0.97);
   if(sh<sharpMax*0.6&&blurSkips<2){blurSkips++;setStatus('Imagen borrosa: espera a que enfoque o aleja un poco la carta.');if(Date.now()-lastAutoFocus>9000)refocus(true);return sleep(110)}
   blurSkips=0;
