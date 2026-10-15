@@ -245,7 +245,7 @@ svg.chart{width:100%;height:auto;display:block}
 
 <!-- ===================== INVENTARIO + ESCÁNER ===================== -->
 <section class="view" id="view-cap" aria-label="Captura" hidden>
-  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.21</button>
+  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.22</button>
   <div class="capgrid">
   <section class="cam" aria-label="Cámara">
     <div class="stage" id="stage">
@@ -511,7 +511,7 @@ svg.chart{width:100%;height:auto;display:block}
 (function(){
 'use strict';
 
-var APP_VERSION='2.21';
+var APP_VERSION='2.22';
 var API='https://db.ygoprodeck.com/api/v7/';
 var STORAGE='escaner-cartas-v1';
 var STORE_KEYS=['tcgplayer','cardmarket','ebay','coolstuffinc'];
@@ -676,12 +676,13 @@ function nameScore(raw,name){
       ra=tk.slice(0,tk.length-k).join(' ');
       if(ra.length<8)break;
       for(pi=0;pi<parts.length;pi++){
-        sc=(1-lev(ra,parts[pi])/Math.max(ra.length,parts[pi].length));
+        sc=(1-lev(ra,parts[pi])/Math.max(ra.length,parts[pi].length))*Math.min(1,ra.length/(a.length*0.6));
         if(sc>seg)seg=sc;
       }
     }
   }
-  return Math.max(full,contain,trunc,seg);
+  /* desempate: entre varias candidatas con el mismo puntaje por subtítulo gana la que coincide con TODO lo leído */
+  return Math.min(1,Math.max(full,contain,trunc,seg)+0.02*Math.max(full,contain,trunc));
 }
 function nameQueries(raw){
   var t=cleanName(raw), out=[];
