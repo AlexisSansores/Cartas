@@ -205,7 +205,7 @@ svg.chart{width:100%;height:auto;display:block}
 .det{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .det polygon{fill:none;stroke:#3ddc84;stroke-width:.8;vector-effect:non-scaling-stroke;stroke-width:3px;stroke-dasharray:10 6}
 #view-cap{position:relative}
-.ver{position:absolute;top:2px;right:10px;z-index:2;font-size:.7rem;font-family:var(--mono);color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:1px 8px}
+.ver{cursor:pointer;position:absolute;top:2px;right:10px;z-index:2;font-size:.7rem;font-family:var(--mono);color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:1px 8px}
 </style>
 </head>
 <body>
@@ -241,7 +241,7 @@ svg.chart{width:100%;height:auto;display:block}
 
 <!-- ===================== INVENTARIO + ESCÁNER ===================== -->
 <section class="view" id="view-cap" aria-label="Captura" hidden>
-  <span class="ver" id="verTag" title="Versión de la app">v2.0</span>
+  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.1</button>
   <div class="capgrid">
   <section class="cam" aria-label="Cámara">
     <div class="stage" id="stage">
@@ -440,6 +440,12 @@ svg.chart{width:100%;height:auto;display:block}
       <div class="bar"><span class="note" id="catMsg"></span><button class="btn small" type="button" id="catSave">Guardar listas</button></div>
     </div>
     <div class="panel">
+      <h3 style="margin:0;font-size:.95rem">Actualizar la app</h3>
+      <p class="note" style="margin:0">Versión instalada: <b id="verNow"></b>. Busca la versión más reciente y la instala sin desinstalar nada. Tus datos no se tocan.</p>
+      <div class="tools"><button class="btn small primary" type="button" id="updBtn">Buscar actualización</button></div>
+      <div class="note" id="updMsg"></div>
+    </div>
+    <div class="panel">
       <h3 style="margin:0;font-size:.95rem">Lectura de nombres de cartas</h3>
       <p class="note" style="margin:0">Para leer nombres largos y rápido, la app guarda en el dispositivo la lista de nombres de todas las cartas (se descarga una sola vez, son varios MB, así que conviene hacerlo con wifi, y se actualiza cada mes).</p>
       <div class="tools"><button class="btn small" type="button" id="ndbBtn">Actualizar lista de nombres</button></div>
@@ -495,7 +501,7 @@ svg.chart{width:100%;height:auto;display:block}
 (function(){
 'use strict';
 
-var APP_VERSION='2.0';
+var APP_VERSION='2.1';
 var API='https://db.ygoprodeck.com/api/v7/';
 var STORAGE='escaner-cartas-v1';
 var STORE_KEYS=['tcgplayer','cardmarket','ebay','coolstuffinc'];
@@ -1574,6 +1580,28 @@ function ndbSearch(raw){
   out.sort(function(a,b){return b.s-a.s});
   return out.slice(0,8);
 }
+/* ---------- actualizar la app sin reinstalar ---------- */
+function updateApp(){
+  var msg=$('updMsg'), say=function(t){if(msg)msg.textContent=t;toast(t)};
+  if(navigator.onLine===false){say('Sin internet: conéctate para buscar la actualización.');return}
+  say('Buscando actualización…');
+  var base=location.href.split('#')[0].replace(/[^\/]*$/,'');
+  fetch(base+'tienda.html?v='+Date.now(),{cache:'reload'}).then(function(r){if(!r.ok)throw new Error('http '+r.status);return r.text()}).then(function(t){
+    var m=t.match(/var APP_VERSION='([^']+)'/), remote=m?m[1]:'?';
+    var same=remote===APP_VERSION;
+    say(same?'Ya tienes la última versión (v'+APP_VERSION+'). Refrescando archivos…':'Hay una versión nueva (v'+remote+'). Instalando…');
+    return persist().then(function(){
+      var files=['tienda.html','tienda-sw.js','tienda.webmanifest','firebase-config.js','huitzilin-logo.jpg','tienda-192.png','tienda-512.png','tienda-maskable-512.png'];
+      return Promise.all(files.map(function(f){return fetch(base+f+'?v='+Date.now(),{cache:'reload'}).catch(function(){})}));
+    }).then(function(){
+      var p=window.caches?caches.keys().then(function(ks){return Promise.all(ks.map(function(k){return caches.delete(k)}))}):Promise.resolve();
+      return p;
+    }).then(function(){
+      var q=navigator.serviceWorker?navigator.serviceWorker.getRegistrations().then(function(rs){return Promise.all(rs.map(function(r){return r.unregister()}))}):Promise.resolve();
+      return q;
+    }).then(function(){setTimeout(function(){location.reload()},700)});
+  }).catch(function(e){say('No se pudo buscar la actualización ('+((e&&e.message)||e)+').')});
+}
 function ndbUi(msg){
   if(msg!==undefined)ndb.msg=msg;
   var el=$('ndbInfo'); if(!el)return;
@@ -1603,7 +1631,7 @@ function ndbDownload(force){
     return idbSet('names',{ts:ndb.ts,rows:rows});
   }).catch(function(e){ndb.msg='No se pudo descargar la lista de cartas ('+((e&&e.message)||e)+'). Se reintentará.'}).then(function(){ndb.busy=false;ndbUi()});
 }
-window.__tienda={ndbBuild:ndbBuild,ndbSearch:ndbSearch,tightLine:tightLine,detectNow:detectNow,setSrc:function(e){srcEl=e},setGeo:function(g){curGeo=g},grab:function(a,b,c,d,w,f,ad,m){return grabRegion(a,b,c,d,w,f,ad,m,workN)}};
+window.__tienda={ndbBuild:ndbBuild,ndbSearch:ndbSearch,tightLine:tightLine,detectNow:detectNow,setSrc:function(e){srcEl=e},updateApp:updateApp,setGeo:function(g){curGeo=g},grab:function(a,b,c,d,w,f,ad,m){return grabRegion(a,b,c,d,w,f,ad,m,workN)}};
 function nameStep(flip,ni){
   var cv;
   if(!farStyle()){var nb=NAME_NEAR[ni%NAME_NEAR.length];cv=grabRegion(0.04,0.96,nb[0],nb[1],1100,flip,0,0,workN)}
@@ -2407,7 +2435,7 @@ function boot(migrated){
   fillAllSelects(); setupSales(); setupPurchases(); setupExpenses(); setupSettings();
   render(); renderSales(); renderPurchases(); renderExpenses(); renderSummary(); renderHome(); showView('hom');
   applyDist(); applyConf(); loadPrefixes();
-  if($('verTag'))$('verTag').textContent='v'+APP_VERSION; fetchFx(false); syncWiring(); syncInit(); ndbLoad(); $('ndbBtn').addEventListener('click',function(){ndbDownload(true)});
+  if($('verTag'))$('verTag').textContent='v'+APP_VERSION; if($('verNow'))$('verNow').textContent='v'+APP_VERSION; $('updBtn').addEventListener('click',updateApp); $('verTag').addEventListener('click',function(){showView('aju');updateApp()}); fetchFx(false); syncWiring(); syncInit(); ndbLoad(); $('ndbBtn').addEventListener('click',function(){ndbDownload(true)});
   if(items.some(function(i){return i.cardId})&&Date.now()-(prefs.pricesTs||0)>12*3600e3)setTimeout(refreshPrices,1500);
   if(migrated){save();toast('Importé el inventario de tu escáner anterior.')}
   if(location.protocol==='http:'&&location.hostname!=='localhost'&&location.hostname!=='127.0.0.1'){
