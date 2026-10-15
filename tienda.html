@@ -178,6 +178,25 @@ svg.chart{width:100%;height:auto;display:block}
 .homeTitle{margin:6px 0 2px;text-align:center;font-size:1.5rem}
 .homeTitle small{display:block;font-size:.85rem;font-weight:500;color:var(--muted)}
 .note.err{color:var(--bad)}
+.capwrap{max-width:640px;margin:0 auto}
+.capfoot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;font-size:.88rem;color:var(--muted)}
+.topbtns{display:flex;gap:8px;align-items:center}
+.lhead{display:none}
+.row{grid-template-columns:minmax(0,1fr)!important;gap:8px}
+.rgrid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr) auto auto;gap:6px 12px;align-items:center}
+.cell{min-width:0}
+.cell::before{content:attr(data-l);display:block;font-size:.66rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.cell.cn{grid-column:1/-1}.cell.cn::before{display:none}
+.cell .px{font-family:var(--mono);font-weight:600}
+.cell .px small{display:block;font-family:inherit;font-weight:400;color:var(--muted);font-size:.72rem}
+@media (max-width:480px){.rgrid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+@media (min-width:760px){
+  .lhead{display:grid;grid-template-columns:minmax(0,2.2fr) minmax(0,1.6fr) minmax(0,1fr) auto minmax(0,.8fr);gap:12px;padding:0 10px;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  .lhead span:nth-child(4){width:104px}
+  .rgrid{grid-template-columns:minmax(0,2.2fr) minmax(0,1.6fr) minmax(0,1fr) auto minmax(0,.8fr);gap:12px}
+  .cell::before{display:none}.cell.cn{grid-column:auto}
+  .cell.qty{width:104px}
+}
 </style>
 </head>
 <body>
@@ -187,7 +206,7 @@ svg.chart{width:100%;height:auto;display:block}
 </div>
 <header class="top" id="topbar" hidden>
   <div><h1>Tienda Yu-Gi-Oh!</h1><div class="sub" id="topSub"></div></div>
-  <button class="btn small primary" type="button" id="installTop" hidden>Instalar app</button>
+  <div class="topbtns"><button class="btn small primary" type="button" id="installTop" hidden>Instalar app</button><button class="btn small" type="button" data-v="aju" id="gearBtn" aria-label="Ajustes">⚙ Ajustes</button></div>
 </header>
 
 <main>
@@ -197,11 +216,13 @@ svg.chart{width:100%;height:auto;display:block}
     <h2 class="homeTitle">Huitzilin <small>Comunidad Coleccionista</small></h2>
     <div class="kpis" id="homKpis"></div>
     <div class="shortcuts" id="homGo">
-      <button type="button" class="btn primary big" data-go="inv">Escanear cartas / Inventario</button>
+      <button type="button" class="btn primary big" data-go="cap">Capturar cartas (cámara)</button>
+      <button type="button" class="btn big" data-go="inv">Inventario</button>
       <button type="button" class="btn big" data-go="ven">Registrar venta</button>
       <button type="button" class="btn big" data-go="com">Registrar compra</button>
       <button type="button" class="btn big" data-go="gas">Registrar gasto</button>
       <button type="button" class="btn big" data-go="res">Resumen</button>
+      <button type="button" class="btn big" data-go="aju">Ajustes y sincronización</button>
     </div>
     <button class="btn small primary" type="button" id="installHome" hidden>Instalar app</button>
     <p class="sub" id="homeSub"></p>
@@ -210,8 +231,8 @@ svg.chart{width:100%;height:auto;display:block}
 </section>
 
 <!-- ===================== INVENTARIO + ESCÁNER ===================== -->
-<section class="view" id="view-inv" aria-label="Inventario" hidden>
-  <div class="invgrid">
+<section class="view" id="view-cap" aria-label="Captura" hidden>
+  <div class="capwrap">
   <section class="cam" aria-label="Cámara">
     <div class="stage" id="stage">
       <video id="video" playsinline muted></video>
@@ -242,8 +263,13 @@ svg.chart{width:100%;height:auto;display:block}
       <div class="t"><span id="optsTitle"></span><button class="btn small ghost" type="button" id="optsClose">Cerrar</button></div>
       <div class="cands" id="cands"></div>
     </div>
+    <div class="capfoot"><span id="capCount">Aún no has agregado cartas en esta sesión.</span><button class="btn small" type="button" data-go="inv">Ver inventario</button></div>
   </section>
+  </div>
+</section>
 
+<section class="view" id="view-inv" aria-label="Inventario" hidden>
+  <div class="stack">
   <section class="panel" aria-label="Lista de inventario">
     <div class="vtitle">
       <h2 id="invTitle">Inventario</h2>
@@ -258,8 +284,9 @@ svg.chart{width:100%;height:auto;display:block}
       <button class="chip" type="button" data-f="out" aria-pressed="false">Agotados</button>
       <button class="chip" type="button" data-f="pend" aria-pressed="false">Sin impresión</button>
     </div>
+    <div class="lhead" aria-hidden="true"><span>Nombre</span><span>Set</span><span id="lhPrice">Precio TCGplayer</span><span>Cantidad</span><span>Idioma</span></div>
     <ul class="list" id="list"></ul>
-    <div class="empty" id="empty">Aún no hay productos. Inicia la cámara y muestra la primera carta, o agrega un producto manual.</div>
+    <div class="empty" id="empty">Aún no hay productos. Ve a Captura y muestra la primera carta, o agrega un producto manual.</div>
     <button class="btn small" type="button" id="moreBtn" hidden>Mostrar más</button>
     <details class="more" id="prodBox">
       <summary>+ Agregar producto manual (sobres, cajas, fundas…)</summary>
@@ -433,12 +460,12 @@ svg.chart{width:100%;height:auto;display:block}
 
 <nav class="nav" id="nav" aria-label="Secciones">
   <button type="button" data-v="hom" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg>Inicio</button>
+  <button type="button" data-v="cap"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Captura</button>
   <button type="button" data-v="inv"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>Inventario</button>
   <button type="button" data-v="ven"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h2l2 10h11l2-7H7"/><circle cx="9" cy="20" r="1.2"/><circle cx="17" cy="20" r="1.2"/></svg>Ventas</button>
   <button type="button" data-v="com"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h13v9H3z"/><path d="M16 11h3l2 2v4h-5"/><circle cx="7" cy="18" r="1.4"/><circle cx="17" cy="18" r="1.4"/></svg>Compras</button>
   <button type="button" data-v="gas"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>Gastos</button>
   <button type="button" data-v="res"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M21 20H3"/></svg>Resumen</button>
-  <button type="button" data-v="aju"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.3l2-1.5-2-3.4-2.3.9a7 7 0 0 0-2.2-1.3L14 3h-4l-.4 2.4a7 7 0 0 0-2.2 1.3l-2.3-.9-2 3.4 2 1.5A7 7 0 0 0 5 12c0 .4 0 .9.1 1.3l-2 1.5 2 3.4 2.3-.9c.7.6 1.4 1 2.2 1.3L10 21h4l.4-2.4c.8-.3 1.5-.7 2.2-1.3l2.3.9 2-3.4-2-1.5c.1-.4.1-.9.1-1.3z"/></svg>Ajustes</button>
 </nav>
 <div class="toast" id="toast" role="status" hidden></div>
 
@@ -880,7 +907,9 @@ function baseFromCard(card){
 
 /* ---------- inventario ---------- */
 function keyOf(it){return (it.setCode||('#'+it.cardId))+'|'+it.rarity+'|'+(it.cond||DEF_COND)}
+var capAdds=0;
 function addItem(base){
+  capAdds++; if($('capCount'))$('capCount').textContent=capAdds+' carta'+(capAdds===1?'':'s')+' agregada'+(capAdds===1?'':'s')+' en esta sesión';
   var probe=Object.assign({},base,{cond:prefs.lastCond||DEF_COND});
   var found=items.filter(function(i){return !i.manual&&keyOf(i)===keyOf(probe)})[0];
   if(found){found.qty++;found.ts=Date.now();found.stores=base.stores;if(!found.needsPrint)found.printPrice=base.printPrice;save();render();return found}
@@ -959,7 +988,11 @@ function fillDetails(d,it){
   var m=movesOf(it);
   d.append(h('div',{class:'form'},
     field('Condición',cond),field('Tipo',tipo),field('Costo unitario (MXN)',cost),field('Precio de venta (MXN)',pr),field('Stock mínimo',mn),field('Notas',nt)),
-    h('div',{class:'note',style:'margin-top:6px',text:'Stock: '+(it.qty||0)+' inicial + '+m.i+' compras − '+m.o+' ventas = '+stockOf(it)}));
+    h('div',{class:'note',style:'margin-top:6px',text:'Stock: '+(it.qty||0)+' inicial + '+m.i+' compras − '+m.o+' ventas = '+stockOf(it)}),
+    h('button',{class:'rm',type:'button',text:'Quitar del inventario',onclick:function(){
+      if((m.i||m.o)&&!window.confirm('Este producto tiene compras o ventas registradas (se conservan en sus listas). ¿Quitarlo del inventario?'))return;
+      items=items.filter(function(i){return i!==it});save();render();
+    }}));
 }
 function rowFor(it){
   var stock=stockOf(it), v=itemValue(it,prefs.basis), opts=it.options||[], rar;
@@ -972,23 +1005,21 @@ function rowFor(it){
     opts.forEach(function(o,i){rar.append(h('option',{value:String(i),selected:o.rarity===it.rarity,text:optLabel(it,o)}))});
   }else rar=h('span',{class:'pill',text:it.rarity&&it.rarity!=='N/A'?it.rarity:(it.type||'Producto')});
   var bd=badgeFor(estadoOf(stock,it.minStock));
-  var pm=priceMx(it), side=h('div',{class:'side'});
-  if(v>0&&stock>0)side.append(h('div',{class:'price'},money(v*stock),stock>1?h('small',{text:stock+' × '+money(v)}):null,effFx()>0?h('small',{text:'≈ '+moneyMx(v*stock*effFx())}):null));
-  else if(pm>0)side.append(h('div',{class:'price'},fmt(pm),h('small',{text:'precio de venta'})));
-  else side.append(h('div',{class:'price'},'sin precio'));
-  side.append(h('div',{class:'step'},
+  var pm=priceMx(it), px=h('div',{class:'px'});
+  if(v>0){px.append(money(v)+' USD');if(effFx()>0)px.append(h('small',{text:'≈ '+moneyMx(v*effFx())}))}
+  else if(pm>0){px.append(fmt(pm));px.append(h('small',{text:'precio de venta'}))}
+  else px.append('sin precio');
+  var step=h('div',{class:'step'},
     h('button',{type:'button','aria-label':'Quitar una pieza',text:'−',onclick:function(){if(stockOf(it)>0&&it.qty>0){it.qty--;save();render()}}}),
     h('span',{text:stock}),
-    h('button',{type:'button','aria-label':'Agregar una pieza',text:'+',onclick:function(){it.qty++;save();render()}})));
-  side.append(h('button',{class:'rm',type:'button',text:'Quitar',onclick:function(){
-    var m=movesOf(it);
-    if((m.i||m.o)&&!window.confirm('Este producto tiene compras o ventas registradas (se conservan en sus listas). ¿Quitarlo del inventario?'))return;
-    items=items.filter(function(i){return i!==it});save();render();
-  }}));
+    h('button',{type:'button','aria-label':'Agregar una pieza',text:'+',onclick:function(){it.qty++;save();render()}}));
   var row=h('li',{class:'row'},
-    h('div',{style:'min-width:0'},h('div',{class:'nm',text:it.name}),
-      h('div',{class:'meta'},it.setCode?h('span',{class:'code',text:it.setCode}):null,rar,it.lang&&it.lang!=='EN'&&!it.manual?h('span',{text:'impresa en '+langEs(it.lang)}):null,h('span',{class:'badge '+bd[0],text:bd[1]}))),
-    side);
+    h('div',{class:'rgrid'},
+      h('div',{class:'cell cn','data-l':'Nombre'},h('div',{class:'nm',text:it.name}),h('span',{class:'badge '+bd[0],text:bd[1]})),
+      h('div',{class:'cell','data-l':'Set'},it.setCode?h('div',{class:'code',text:it.setCode}):null,rar),
+      h('div',{class:'cell','data-l':priceLabel()},px),
+      h('div',{class:'cell qty','data-l':'Cantidad'},step),
+      h('div',{class:'cell','data-l':'Idioma'},h('span',{text:it.lang?langEs(it.lang):'—'}))));
   var parts=Object.keys(STORE_LABELS).filter(function(k){return it.stores&&it.stores[k]>0}).map(function(k){return STORE_LABELS[k]+' '+money(it.stores[k])});
   var sa=storeAvg(it.stores);
   if(it.printPrice>0||parts.length)row.append(h('div',{class:'breakdown',text:(it.printPrice>0?'Impresión '+money(it.printPrice):'Impresión s/d')+' · Promedio tiendas '+(sa?money(sa):'s/d')+(parts.length?' ('+parts.join(' · ')+')':'')}));
@@ -996,6 +1027,7 @@ function rowFor(it){
   row.append(detailsFor(it));
   return row;
 }
+function priceLabel(){return prefs.basis==='print'?'Precio impresión':prefs.basis==='stores'?'Promedio tiendas':'Precio TCGplayer'}
 var _rendering=false,_again=false;
 function render(){
   if(_rendering){_again=true;return}
@@ -1008,7 +1040,7 @@ function renderNow(){
   s.append(h('span',null,h('b',{text:t.qty}),' piezas'),h('span',null,h('b',{text:t.unique}),' productos'),
     h('span',null,'valor ',h('b',{text:money(t.value)+' USD'}),effFx()>0?' ≈ '+moneyMx(t.value*effFx()):'',t.unpriced?' (+'+t.unpriced+' sin precio)':''));
   if(t.pending)s.append(h('span',{text:t.pending+' por elegir impresión'}));
-  $('invTitle').textContent='Inventario'+(items.length?' · '+items.length:'');
+  $('invTitle').textContent='Inventario'+(items.length?' · '+items.length:''); if($('lhPrice'))$('lhPrice').textContent=priceLabel();
   $('basis').value=prefs.basis;
   if(document.activeElement!==$('fx')){var ef=effFx();$('fx').value=ef>0?Number(ef.toFixed(4)):''}
   $('fxInfo').textContent=fxText();
@@ -1821,7 +1853,7 @@ function renderHome(){
 }
 function showView(v){
   $('topbar').hidden=(v==='hom');
-  if(curView==='inv'&&v!=='inv'&&running)pause();
+  if(curView==='cap'&&v!=='cap'&&running)pause();
   curView=v;
   document.querySelectorAll('.view').forEach(function(s){s.hidden=s.id!=='view-'+v});
   document.querySelectorAll('#nav button').forEach(function(b){if(b.dataset.v===v)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
@@ -2046,6 +2078,8 @@ function syncWiring(){
 
 /* ---------- conexiones de la interfaz ---------- */
 $('nav').addEventListener('click',function(e){var b=e.target.closest('button[data-v]');if(b)showView(b.dataset.v)});
+$('gearBtn').addEventListener('click',function(){showView('aju')});
+document.addEventListener('click',function(e){var b=e.target.closest('#view-cap button[data-go]');if(b)showView(b.dataset.go)});
 $('invFilter').addEventListener('input',function(e){invFilter=e.target.value;invLimit=60;render()});
 $('invChips').addEventListener('click',function(e){
   var b=e.target.closest('.chip');if(!b)return; invState=b.dataset.f; invLimit=60;
