@@ -246,7 +246,7 @@ svg.chart{width:100%;height:auto;display:block}
 
 <!-- ===================== INVENTARIO + ESCÁNER ===================== -->
 <section class="view" id="view-cap" aria-label="Captura" hidden>
-  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.35</button>
+  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.36</button>
   <div class="capgrid">
   <section class="cam" aria-label="Cámara">
     <div class="stage" id="stage">
@@ -273,6 +273,7 @@ svg.chart{width:100%;height:auto;display:block}
       <button class="btn small" type="button" id="frameBtn" title="Arrastra el marco sobre la carta; pellizca o usa − y + para el tamaño">Marco: auto</button>
       <button class="btn small" type="button" id="frameMinus" aria-label="Marco más chico">−</button>
       <button class="btn small" type="button" id="framePlus" aria-label="Marco más grande">+</button>
+      <button class="btn small" type="button" id="focusBtn" title="Pide a la cámara que vuelva a enfocar">🎯 Enfocar</button>
       <button class="btn small" type="button" id="reportBtn" title="Guarda una imagen con la lectura actual para mandarla">📸 Reporte</button>
       <select class="sel" id="camSel" aria-label="Elegir cámara" hidden></select>
     </div>
@@ -513,7 +514,7 @@ svg.chart{width:100%;height:auto;display:block}
 (function(){
 'use strict';
 
-var APP_VERSION='2.35';
+var APP_VERSION='2.36';
 var API='https://db.ygoprodeck.com/api/v7/';
 var STORAGE='escaner-cartas-v1';
 var STORE_KEYS=['tcgplayer','cardmarket','ebay','coolstuffinc'];
@@ -1543,6 +1544,52 @@ function startCamera(deviceId){
   });
 }
 
+
+/* ---------- enfoque de la cámara ---------- */
+var lastAutoFocus=0;
+function focusInfo(){
+  try{
+    var t=stream&&stream.getVideoTracks()[0]; if(!t)return 'enfoque: sin cámara';
+    var c=t.getCapabilities?t.getCapabilities():{}, st=t.getSettings?t.getSettings():{};
+    return 'enfoque: '+((c.focusMode&&c.focusMode.length)?c.focusMode.join('/'):'no controlable')+(st.focusMode?' (ahora '+st.focusMode+')':'')+(c.pointsOfInterest?' +punto':'');
+  }catch(e){return 'enfoque: ?'}
+}
+function refocus(silent){
+  var t=stream&&stream.getVideoTracks()[0], btn=$('focusBtn');
+  if(!t){if(!silent)setStatus('Primero enciende la cámara.',true);return Promise.resolve(false)}
+  lastAutoFocus=Date.now();
+  var caps={}; try{caps=t.getCapabilities?t.getCapabilities():{}}catch(e){}
+  var modes=caps.focusMode||[], poi=null;
+  try{
+    if(caps.pointsOfInterest&&video.videoWidth){var r=guideInVideo();poi={x:Math.min(1,Math.max(0,(r.x+r.w/2)/video.videoWidth)),y:Math.min(1,Math.max(0,(r.y+r.h/2)/video.videoHeight))}}
+  }catch(e){}
+  function ap(c){var o=Object.assign({},c); if(poi)o.pointsOfInterest=[poi]; return t.applyConstraints({advanced:[o]})}
+  function wait(ms){return new Promise(function(r){setTimeout(r,ms)})}
+  if(btn)btn.disabled=true;
+  if(!silent)setStatus('Enfocando…');
+  var p;
+  if(modes.indexOf('single-shot')>-1){
+    p=ap({focusMode:'single-shot'}).then(function(){return wait(1300)}).then(function(){return modes.indexOf('continuous')>-1?t.applyConstraints({advanced:[{focusMode:'continuous'}]}):null});
+  }else if(modes.indexOf('continuous')>-1&&modes.indexOf('manual')>-1){
+    /* sin enfoque de un disparo: pasar a manual y volver a continuo obliga a la cámara a enfocar de nuevo */
+    p=t.applyConstraints({advanced:[{focusMode:'manual'}]}).then(function(){return wait(250)}).then(function(){return ap({focusMode:'continuous'})});
+  }else if(modes.indexOf('continuous')>-1){
+    p=ap({focusMode:'continuous'});
+  }else{
+    p=Promise.reject(new Error('sin control de enfoque'));
+  }
+  return p.then(function(){
+    sharpMax=0; blurSkips=0;
+    if(!silent)setStatus('Enfoque listo. Mantén la carta quieta un momento.');
+    return true;
+  }).catch(function(){
+    /* la cámara no deja controlar el enfoque: reiniciarla suele disparar el autoenfoque */
+    var did=null; try{did=t.getSettings().deviceId}catch(e){}
+    if(!silent)setStatus('Tu cámara no deja controlar el enfoque; la reinicio para que enfoque de nuevo…');
+    return startCamera(did||undefined).then(function(ok){sharpMax=0;blurSkips=0;if(ok&&!silent)setStatus('Cámara reiniciada. Mantén la carta quieta un momento.');return ok});
+  }).then(function(r){if(btn)btn.disabled=false;return r},function(e){if(btn)btn.disabled=false;return false});
+}
+
 /* ---------- ciclo de lectura ---------- */
 function lock(){state='locked';lockSig=signature();changeCount=0}
 function unlock(){state='scanning';rejected={};rejSig=null;weak=0;votes=[];nameVotes=[];failTicks=0;lockSig=null;setGuide('');hideTag();clearOptions();lastCodeRaw='';lastNameRaw='';setDbg();setStatus('Siguiente carta.')}
@@ -1903,7 +1950,7 @@ function scanOnce(){
   var nb=useFit?BANDS_FIT.length:(farStyle()?BANDS.length:BANDS_NEAR.length), bi=failTicks%nb, vr=VARIANTS[Math.floor(failTicks/nb)%VARIANTS.length];
   var flip=vr[0], adapt=vr[1], mask=vr[2]&&farStyle(), ni=failTicks;
   var sh=frameSharp(); sharpMax=Math.max(sh,sharpMax*0.97);
-  if(sh<sharpMax*0.6&&blurSkips<2){blurSkips++;setStatus('Imagen borrosa: espera a que enfoque o aleja un poco la carta.');return sleep(110)}
+  if(sh<sharpMax*0.6&&blurSkips<2){blurSkips++;setStatus('Imagen borrosa: espera a que enfoque o aleja un poco la carta.');if(Date.now()-lastAutoFocus>9000)refocus(true);return sleep(110)}
   blurSkips=0;
   setGuide('reading');
   var pn=workerN?nameStep(flip,ni).catch(function(){return null}):null;
@@ -2140,7 +2187,7 @@ function buildReport(){
   y+=4;
   info.push(d.toLocaleString('es-MX'));
   info.push('cámara '+(video.videoWidth?video.videoWidth+'×'+video.videoHeight:'sin cámara')+' · distancia '+(prefs.dist==='near'?'cerca':'lejos')+' · marco '+(frameMan?'manual':'auto')+' · plantilla '+(useFit&&lastFit?'OK '+lastFit.score.toFixed(1)+'/'+lastFit.xs.toFixed(1)+' inc '+lastFit.th+'°':(lastFit?'no encajó '+lastFit.score.toFixed(1)+'/'+lastFit.xs.toFixed(1):'—'))+' · confirmar '+(prefs.confirmAll?'todas':'dudosas'));
-  info.push('estado '+state+' · lista de cartas '+(ndb.ready?ndb.n:'NO descargada')+' · pantalla '+window.innerWidth+'×'+window.innerHeight+' · '+(navigator.userAgent.match(/Android[^;)]*|iPhone OS [\d_]+/)||[''])[0]);
+  info.push('estado '+state+' · lista de cartas '+(ndb.ready?ndb.n:'NO descargada')+' · pantalla '+window.innerWidth+'×'+window.innerHeight+' · '+(navigator.userAgent.match(/Android[^;)]*|iPhone OS [\d_]+/)||[''])[0]+' · '+focusInfo());
   text(info.join('\n'),'20px monospace','#444');
   y+=10;
   if(video.videoWidth&&video.readyState>=2){
@@ -2216,6 +2263,7 @@ function sendReport(){
   },'image/png');
 }
 $('reportBtn').addEventListener('click',sendReport);
+$('focusBtn').addEventListener('click',function(){refocus(false)});
 window.__tienda&&(window.__tienda.buildReport=buildReport);
 /* ---------- dictado del código por voz ---------- */
 var SPK_D={cero:'0',uno:'1',una:'1',un:'1',dos:'2',tres:'3',cuatro:'4',cinco:'5',seis:'6',siete:'7',ocho:'8',nueve:'9',diez:'10',once:'11',doce:'12',trece:'13',catorce:'14',quince:'15',dieciseis:'16',diecisiete:'17',dieciocho:'18',diecinueve:'19',veinte:'20',veintiuno:'21',veintidos:'22',veintitres:'23',veinticuatro:'24',veinticinco:'25',veintiseis:'26',veintisiete:'27',veintiocho:'28',veintinueve:'29',treinta:'30'};
