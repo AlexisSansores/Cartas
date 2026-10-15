@@ -433,6 +433,12 @@ svg.chart{width:100%;height:auto;display:block}
       <div class="form" id="catBox"></div>
       <div class="bar"><span class="note" id="catMsg"></span><button class="btn small" type="button" id="catSave">Guardar listas</button></div>
     </div>
+    <div class="panel">
+      <h3 style="margin:0;font-size:.95rem">Lectura de nombres de cartas</h3>
+      <p class="note" style="margin:0">Para leer nombres largos y rápido, la app guarda en el dispositivo la lista de nombres de todas las cartas (se descarga una sola vez, son varios MB, así que conviene hacerlo con wifi, y se actualiza cada mes).</p>
+      <div class="tools"><button class="btn small" type="button" id="ndbBtn">Actualizar lista de nombres</button></div>
+      <div class="note" id="ndbInfo"></div>
+    </div>
     <div class="panel" id="syncBox">
       <h3 style="margin:0;font-size:.95rem">Sincronizar con otros dispositivos</h3>
       <p class="note" style="margin:0">Entra con tu cuenta de Google en cada dispositivo y la tienda se mantiene igual en todos (inventario, ventas, compras y gastos). Funciona sin internet y se pone al día al volver la conexión.</p>
@@ -632,7 +638,7 @@ function nameScore(raw,name){
   var full=1-lev(a,b)/Math.max(a.length,b.length);
   /* el nombre aparece dentro de una lectura con ruido (icono de atributo, estrellas…) */
   var noise=Math.max(0,a.length-b.length);
-  var contain=(1-semiLev(b,a)/b.length)*(1-Math.min(0.15,Math.max(0,noise-3)*0.01));
+  var contain=(1-semiLev(b,a)/b.length)*(1-Math.min(0.15,Math.max(0,noise-3)*0.01))*Math.min(1,b.length/(a.length*0.7));
   /* lectura cortada: lo leído es el inicio o un tramo del nombre */
   var cov=Math.min(1,a.length/b.length);
   var trunc=a.length>=6?(1-semiLev(a,b)/a.length)*Math.sqrt(cov)*0.95:0;
@@ -710,10 +716,10 @@ var openRows={}, invFilter='', invState='all', invLimit=60, _sm=null;
 
 var AUTO=0.88, SUGGEST=0.85;
 var rejected={}, rejSig=null, rejChange=0, weak=0, shownIds=[];
-var stream=null, worker=null, curMode=null, running=false, state='idle', votes=[], nameVotes=[], failTicks=0, lockSig=null, changeCount=0;
+var stream=null, worker=null, workerN=null, curMode=null, running=false, state='idle', votes=[], nameVotes=[], failTicks=0, lockSig=null, changeCount=0;
 var setCache=new Map(), cardCache=new Map(), nameCache=new Map(), audioCtx=null, tagTimer=null;
 var lastCodeRaw='', lastNameRaw='';
-var work=document.createElement('canvas'), sigCv=document.createElement('canvas'), zoomCv=document.createElement('canvas'), thumbCv=document.createElement('canvas');
+var work=document.createElement('canvas'), sigCv=document.createElement('canvas'), zoomCv=document.createElement('canvas'), workN=document.createElement('canvas'), tightCv=document.createElement('canvas'), thumbCv=document.createElement('canvas');
 var known={map:{},list:[]}, sharpMax=0, blurSkips=0;
 sigCv.width=24; sigCv.height=34;
 
@@ -897,7 +903,7 @@ function storesFrom(card){
   var p=(card.card_prices&&card.card_prices[0])||{};
   return {tcgplayer:num(p.tcgplayer_price),cardmarket:num(p.cardmarket_price),ebay:num(p.ebay_price),amazon:num(p.amazon_price),coolstuffinc:num(p.coolstuffinc_price)};
 }
-function thumbOf(card){var i=card.card_images&&card.card_images[0];return i?(i.image_url_small||i.image_url_cropped||i.image_url):''}
+function thumbOf(card){var i=card.card_images&&card.card_images[0];return i?(i.image_url_small||i.image_url_cropped||i.image_url):(card&&card.id?'https://images.ygoprodeck.com/images/cards_small/'+card.id+'.jpg':'')}
 function buildFromCode(info,lang){
   return loadCard(info.id).then(function(card){
     var code=info.set_code;
@@ -1141,6 +1147,7 @@ function askCode(found,force){
   });
 }
 function commitCard(card){
+  if(card&&card._stub)return loadCard(card.id).then(commitCard).catch(function(){setStatus('No se pudo cargar la carta. Revisa tu conexión.',true)});
   var base=baseFromCard(card), it=addItem(base);
   beep(); clearOptions();
   showTag([h('b',{text:'✓ '+it.name}),h('span',{class:'sub',text:(base.needsPrint?'Elige la impresión en la lista':it.setCode+' · '+it.rarity)+' · ×'+it.qty})],true,running?0:2500);
@@ -1167,12 +1174,13 @@ var IGNORE_ZONES=[
   {k:'tipo-y-efecto',x0:0.00,x1:1.00,y0:0.685,y1:0.905},
   {k:'atk-def',x0:0.50,x1:1.00,y0:0.905,y1:0.95}
 ];
-function grabRegion(xr0,xr1,yr0,yr1,outW,flip,adapt,mask){
+function grabRegion(xr0,xr1,yr0,yr1,outW,flip,adapt,mask,target){
+  var wk=target||work;
   var r=guideInVideo();
   var sx=r.x+r.w*xr0, sw=r.w*(xr1-xr0), sy=r.y+r.h*yr0, sh=r.h*(yr1-yr0);
   var outH=Math.max(1,Math.round(sh*outW/sw));
-  work.width=outW; work.height=outH;
-  var ctx=work.getContext('2d',{willReadFrequently:true});
+  wk.width=outW; wk.height=outH;
+  var ctx=wk.getContext('2d',{willReadFrequently:true});
   ctx.imageSmoothingQuality='high';
   ctx.drawImage(video,sx,sy,sw,sh,0,0,outW,outH);
   var img=ctx.getImageData(0,0,outW,outH), d=img.data, n=outW*outH;
@@ -1206,7 +1214,7 @@ function grabRegion(xr0,xr1,yr0,yr1,outW,flip,adapt,mask){
   }
   for(i=0,p=0;i<n;i++,p+=4){d[p]=d[p+1]=d[p+2]=v8[i];d[p+3]=255}
   ctx.putImageData(img,0,0);
-  return work;
+  return wk;
 }
 /* nitidez del encuadre: se usa para no gastar lecturas en cuadros borrosos */
 function frameSharp(){
@@ -1237,8 +1245,14 @@ function initWorker(){
   setStatus('Cargando el lector de texto (la primera vez tarda un poco)…');
   return Tesseract.createWorker('eng',1,{}).then(function(w){
     return w.setParameters({tessedit_char_whitelist:CODE_WL,tessedit_pageseg_mode:'11',user_defined_dpi:'300'}).then(function(){worker=w;curMode='code'});
+  }).then(function(){
+    /* segundo lector, solo para nombres: trabaja en paralelo con el del código */
+    return Tesseract.createWorker('eng',1,{}).then(function(w2){
+      return w2.setParameters({tessedit_char_whitelist:NAME_WL,tessedit_pageseg_mode:'7',user_defined_dpi:'300'}).then(function(){workerN=w2});
+    }).catch(function(){workerN=null});
   });
 }
+function ocrName(cv){return workerN?workerN.recognize(cv):ocr(cv,'name')}
 function ocr(cv,mode){
   var p=Promise.resolve();
   if(curMode!==mode){
@@ -1338,14 +1352,135 @@ function codeStep(bi,flip,adapt,mask){
     });
   });
 }
+/* ---------- recorte fino de la línea del nombre ---------- */
+function tightLine(src,dst){
+  var W=src.width,H=src.height; if(W<40||H<12)return null;
+  var d=src.getContext('2d',{willReadFrequently:true}).getImageData(0,0,W,H).data, x, y, rows=new Uint32Array(H);
+  for(y=0;y<H;y++){var c=0;for(x=0;x<W;x++)if(d[(y*W+x)*4]<110)c++;rows[y]=c}
+  var good=[]; for(y=0;y<H;y++)good[y]=rows[y]>=W*0.015&&rows[y]<=W*0.55;
+  var best=null,run=null,gap=0;
+  for(y=0;y<H;y++){
+    if(good[y]){if(!run)run={a:y,b:y,sum:0};run.b=y;run.sum+=rows[y];gap=0}
+    else if(run){gap++;if(gap>Math.max(3,H*0.03)){if(!best||run.sum>best.sum)best=run;run=null;gap=0}}
+  }
+  if(run&&(!best||run.sum>best.sum))best=run;
+  if(!best||best.b-best.a<10)return null;
+  var rh=best.b-best.a+1, cols=new Uint32Array(W);
+  for(y=best.a;y<=best.b;y++)for(x=0;x<W;x++)if(d[(y*W+x)*4]<110)cols[x]++;
+  var x0=-1,x1=-1;
+  for(x=0;x<W;x++){if(cols[x]>=2&&cols[x]<rh*0.85){if(x0<0)x0=x;x1=x}}
+  if(x0<0||x1-x0<rh*1.5)return null;
+  var px=Math.round(rh*0.6), py=Math.round(rh*0.45);
+  var sx=Math.max(0,x0-px), sw=Math.min(W-sx,x1-x0+1+2*px), sy=Math.max(0,best.a-py), sh=Math.min(H-sy,rh+2*py);
+  var k=Math.min(3,Math.max(0.6,56/rh));
+  if(sw*k>2400)k=2400/sw;
+  var m=Math.round(rh*k*0.5);
+  dst.width=Math.round(sw*k)+2*m; dst.height=Math.round(sh*k)+2*m;
+  var z=dst.getContext('2d'); z.imageSmoothingQuality='high'; z.fillStyle='#fff'; z.fillRect(0,0,dst.width,dst.height);
+  z.drawImage(src,sx,sy,sw,sh,m,m,Math.round(sw*k),Math.round(sh*k));
+  return dst;
+}
+
+/* ---------- base local de nombres: todas las cartas, guardada en el dispositivo ---------- */
+var ndb={ready:false,ids:[],names:[],norm:[],idx:null,tri:null,gcount:[],vocab:[],n:0,ts:0,busy:false,msg:''};
+function grams(c){var o=[],i,seen={};for(i=0;i+3<=c.length;i++){var g=c.substr(i,3);if(!seen[g]){seen[g]=1;o.push(g)}}return o}
+function levMax(a,b,mx){
+  var m=a.length,n=b.length,i,j; if(Math.abs(m-n)>mx)return mx+1;
+  var prev=new Array(n+1),cur=new Array(n+1);
+  for(j=0;j<=n;j++)prev[j]=j;
+  for(i=1;i<=m;i++){
+    cur[0]=i; var rm=i;
+    for(j=1;j<=n;j++){var v=Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+(a.charCodeAt(i-1)===b.charCodeAt(j-1)?0:1));cur[j]=v;if(v<rm)rm=v}
+    if(rm>mx)return mx+1;
+    var t=prev;prev=cur;cur=t;
+  }
+  return prev[n];
+}
+function ndbBuild(rows,ts){
+  var idx=Object.create(null),tri=Object.create(null),gcount=[],vocab=[],ids=[],names=[],norm=[];
+  rows.forEach(function(r,i){
+    ids.push(r[0]);names.push(r[1]);var nn=normName(r[1]);norm.push(nn);
+    var gs=grams(nn.replace(/ /g,'')); gcount.push(gs.length); gs.forEach(function(g){(tri[g]||(tri[g]=[])).push(i)});
+    nn.split(' ').forEach(function(w){
+      if(!w)return;
+      var a=idx[w]; if(!a){a=idx[w]=[];vocab.push(w)}
+      if(a[a.length-1]!==i)a.push(i);
+    });
+  });
+  ndb.ids=ids;ndb.names=names;ndb.norm=norm;ndb.idx=idx;ndb.tri=tri;ndb.gcount=gcount;ndb.vocab=vocab;ndb.n=rows.length;ndb.ts=ts||Date.now();ndb.ready=rows.length>=500;
+}
+function ndbSearch(raw){
+  if(!ndb.ready)return [];
+  var q=normName(cleanName(raw)); if(q.length<4)return [];
+  var toks=q.split(' ').filter(function(w){return w.length>=3});
+  if(!toks.length)return [];
+  var score=Object.create(null), N=ndb.n;
+  toks.forEach(function(t){
+    var mx=t.length>=9?2:(t.length>=5?1:0), hits=[], v, w;
+    if(ndb.idx[t])hits.push([t,0]);
+    if(mx>0){
+      for(v=0;v<ndb.vocab.length;v++){
+        w=ndb.vocab[v]; if(w===t||Math.abs(w.length-t.length)>mx)continue;
+        var dd=levMax(t,w,mx); if(dd<=mx)hits.push([w,dd]);
+      }
+    }
+    hits.forEach(function(hd){
+      var ids=ndb.idx[hd[0]], wt=(Math.log(N/(ids.length+1))+1)*(1-hd[1]/(t.length+1)), k;
+      for(k=0;k<ids.length;k++)score[ids[k]]=(score[ids[k]]||0)+wt;
+    });
+  });
+  var ks=Object.keys(score).sort(function(a,b){return score[b]-score[a]}).slice(0,40), pool={};
+  ks.forEach(function(i){pool[i]=1});
+  /* respaldo por trigramas: resiste letras pegadas, separadas o mal leídas */
+  var qg=grams(q.replace(/ /g,'')), shared=Object.create(null);
+  qg.forEach(function(g){var l=ndb.tri[g]; if(!l||l.length>4000)return; for(var k=0;k<l.length;k++)shared[l[k]]=(shared[l[k]]||0)+1});
+  Object.keys(shared).map(function(i){return [i,shared[i]/(qg.length+ndb.gcount[i]-shared[i])]}).sort(function(a,b){return b[1]-a[1]}).slice(0,40).forEach(function(p){pool[p[0]]=1});
+  var out=Object.keys(pool).map(function(i){return {card:{id:ndb.ids[i],name:ndb.names[i],_stub:true},s:nameScore(raw,ndb.names[i])}});
+  out.sort(function(a,b){return b.s-a.s});
+  return out.slice(0,8);
+}
+function ndbUi(msg){
+  if(msg!==undefined)ndb.msg=msg;
+  var el=$('ndbInfo'); if(!el)return;
+  el.textContent=ndb.msg||(ndb.ready?(ndb.n.toLocaleString('es-MX')+' cartas guardadas · actualizada el '+new Date(ndb.ts).toLocaleDateString('es-MX')):'Aún no descargada. Se descarga sola la primera vez que enciendes la cámara con internet (varios MB).');
+}
+function ndbLoad(){
+  return idbGet('names').catch(function(){return null}).then(function(st){
+    if(st&&st.rows&&st.rows.length>=500)ndbBuild(st.rows,st.ts);
+    ndbUi();
+  });
+}
+function ndbDownload(force){
+  if(ndb.busy||!navigator.onLine)return Promise.resolve();
+  if(!force&&ndb.ready&&Date.now()-ndb.ts<30*864e5)return Promise.resolve();
+  ndb.busy=true; ndbUi('Descargando nombres de cartas…');
+  var rows=[],off=0,PAGE=2500;
+  function page(){
+    return fetch(API+'cardinfo.php?num='+PAGE+'&offset='+off).then(function(r){if(!r.ok)throw new Error('http '+r.status);return r.json()}).then(function(j){
+      var d=(j&&j.data)||[]; d.forEach(function(c){if(c&&c.id&&c.name)rows.push([c.id,c.name])});
+      off+=PAGE; ndbUi('Descargando nombres de cartas… '+rows.length);
+      if(d.length>=PAGE&&off<40000)return page();
+    });
+  }
+  return page().then(function(){
+    if(rows.length<1000)throw new Error('la lista llegó incompleta');
+    ndbBuild(rows,Date.now()); ndb.msg='';
+    return idbSet('names',{ts:ndb.ts,rows:rows});
+  }).catch(function(e){ndb.msg='No se pudo descargar la lista de cartas ('+((e&&e.message)||e)+'). Se reintentará.'}).then(function(){ndb.busy=false;ndbUi()});
+}
+window.__tienda={ndbBuild:ndbBuild,ndbSearch:ndbSearch,tightLine:tightLine};
 function nameStep(flip,ni){
   var cv;
-  if(prefs.dist==='near'){var nb=NAME_NEAR[ni%NAME_NEAR.length];cv=grabRegion(0.04,0.96,nb[0],nb[1],1100,flip)}
-  else cv=grabRegion(0.03,0.83,0.02,0.105,1000,flip);
-  return ocr(cv,'name').then(function(res){
+  if(prefs.dist==='near'){var nb=NAME_NEAR[ni%NAME_NEAR.length];cv=grabRegion(0.04,0.96,nb[0],nb[1],1100,flip,0,0,workN)}
+  else cv=grabRegion(0.03,0.83,0.02,0.105,1000,flip,0,0,workN);
+  if(ni%2===0){var t=null;try{t=tightLine(cv,tightCv)}catch(e){}if(t)cv=t}   /* lectura alterna: recortada y sin recortar */
+  return ocrName(cv).then(function(res){
     var raw=cleanName(res.data.text); lastNameRaw=raw;
     if(raw.length<4||isTypeLine(raw))return null;
+    var local=ndbSearch(raw);
+    if(local.length&&local[0].s>=0.6)return {raw:raw,ranked:local};
     var qs=nameQueries(raw), all=[], seen={}, chain=Promise.resolve(), good=false;
+    local.forEach(function(r){seen[r.card.id]=1});
     qs.forEach(function(q){
       chain=chain.then(function(){
         if(good)return;
@@ -1356,11 +1491,12 @@ function nameStep(flip,ni){
       });
     });
     return chain.then(function(){
-      var ranked=all.map(function(c){return {card:c,s:nameScore(raw,c.name)}}).sort(function(a,b){return b.s-a.s});
+      var ranked=all.map(function(c){return {card:c,s:nameScore(raw,c.name)}}).concat(local).sort(function(a,b){return b.s-a.s});
       return {raw:raw,ranked:ranked};
     });
   });
 }
+function nameOnce(flip,ni,pre){return pre!==undefined?Promise.resolve(pre):nameStep(flip,ni)}
 function scanOnce(){
   if(video.readyState<2||!video.videoWidth)return sleep(120);
   if(rejSig){var dd=sigDiff(rejSig); rejChange=dd>30?rejChange+1:0; if(rejChange>=2){rejected={};rejSig=null;rejChange=0}}
@@ -1370,7 +1506,9 @@ function scanOnce(){
   if(sh<sharpMax*0.6&&blurSkips<2){blurSkips++;setStatus('Imagen borrosa: espera a que enfoque o aleja un poco la carta.');return sleep(110)}
   blurSkips=0;
   setGuide('reading');
-  return codeStep(bi,flip,adapt,mask).then(function(found){
+  var pn=workerN?nameStep(flip,ni).catch(function(){return null}):null;
+  return Promise.all([codeStep(bi,flip,adapt,mask),pn]).then(function(rs){
+    var found=rs[0], nr=pn?rs[1]:undefined;
     setDbg();
     if(found&&rejected[found.info.id])found=null;
     if(found){
@@ -1385,7 +1523,7 @@ function scanOnce(){
       if(found.conf>=AUTO*100){
         /* lectura no tan segura: confirma con el nombre para no aceptar un número mal leído */
         if(found.conf<94){
-          return nameStep(flip,ni).then(function(r){
+          return nameOnce(flip,ni,nr).then(function(r){
             if(r&&r.raw.length>=6&&nameScore(r.raw,found.info.name)<0.4&&r.ranked.length&&r.ranked[0].s>=0.5){
               votes=[];failTicks++;
               setStatus('El código y el nombre no coinciden; revisando…');
@@ -1399,7 +1537,7 @@ function scanOnce(){
       setStatus('Confirmando '+code+'…');
       return;
     }
-    return nameStep(flip,ni).then(function(r){
+    return nameOnce(flip,ni,nr).then(function(r){
       setDbg();
       failTicks++;
       return handleName(r);
@@ -1418,7 +1556,7 @@ function handleName(r){
     weak=0;
     nameVotes.push({id:top.card.id,t:now}); nameVotes=nameVotes.filter(function(v){return now-v.t<5000});
     var n=nameVotes.filter(function(v){return v.id===top.card.id}).length;
-    if(top.s>=0.95||n>=2){failTicks=0;return decide(top)}
+    if(top.s>=0.93||n>=2){failTicks=0;return decide(top)}
     setStatus('Confirmando "'+top.card.name+'"…');
   }else if(top.s>=SUGGEST){
     weak++;
@@ -1472,7 +1610,7 @@ $('startBtn').addEventListener('click',function(){
   startCamera().then(function(ok){
     if(!ok){btn.disabled=false;btn.textContent='Iniciar cámara';return}
     $('start').hidden=true; $('pauseBtn').disabled=false;
-    return initWorker().then(function(){state='scanning';$('pauseBtn').textContent='Pausar';setStatus('Muestra una carta.');loop()});
+    return initWorker().then(function(){state='scanning';$('pauseBtn').textContent='Pausar';setStatus('Muestra una carta.');loop();ndbDownload(false)});
   }).catch(function(e){setStatus(e.message||'No se pudo iniciar el lector.',true);$('start').hidden=false;btn.disabled=false;btn.textContent='Reintentar'});
 });
 $('distBtn').addEventListener('click',function(){prefs.dist=prefs.dist==='near'?'far':'near';failTicks=0;save();applyDist();setStatus(prefs.dist==='near'?'Modo cerca: acerca la carta; basta con ver el código o el nombre.':'Modo lejos: encaja la carta completa en el marco.')});
@@ -2120,7 +2258,7 @@ function boot(migrated){
   fillAllSelects(); setupSales(); setupPurchases(); setupExpenses(); setupSettings();
   render(); renderSales(); renderPurchases(); renderExpenses(); renderSummary(); renderHome(); showView('hom');
   applyDist(); applyConf(); loadPrefixes();
-  fetchFx(false); syncWiring(); syncInit();
+  fetchFx(false); syncWiring(); syncInit(); ndbLoad(); $('ndbBtn').addEventListener('click',function(){ndbDownload(true)});
   if(items.some(function(i){return i.cardId})&&Date.now()-(prefs.pricesTs||0)>12*3600e3)setTimeout(refreshPrices,1500);
   if(migrated){save();toast('Importé el inventario de tu escáner anterior.')}
   if(location.protocol==='http:'&&location.hostname!=='localhost'&&location.hostname!=='127.0.0.1'){
