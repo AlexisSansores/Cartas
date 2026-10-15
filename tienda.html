@@ -1409,7 +1409,22 @@ function loop(){
   })();
 }
 function pause(){running=false;state='scanning';setGuide('');$('pauseBtn').textContent='Reanudar';setStatus('Lectura en pausa.')}
-function resume(){clearOptions();state='scanning';votes=[];nameVotes=[];failTicks=0;$('pauseBtn').textContent='Pausar';setStatus('Muestra una carta.');loop()}
+function camAlive(){var t=stream&&stream.getVideoTracks()[0];return !!(t&&t.readyState==='live'&&!t.muted&&video.srcObject===stream&&video.videoWidth>0)}
+function ensureCamera(){
+  if(camAlive()){return video.paused?video.play().then(function(){return true},function(){return false}):Promise.resolve(true)}
+  var id=null;try{id=stream&&stream.getVideoTracks()[0]&&stream.getVideoTracks()[0].getSettings().deviceId}catch(e){}
+  return startCamera(id||undefined).then(function(ok){return ok||startCamera()});
+}
+function resume(){
+  setStatus('Reanudando cámara…');
+  ensureCamera().then(function(ok){
+    if(!ok){setStatus('No se pudo reanudar la cámara. Toca Reanudar otra vez o revisa el permiso.',true);return}
+    clearOptions();state='scanning';votes=[];nameVotes=[];failTicks=0;$('pauseBtn').textContent='Pausar';setStatus('Muestra una carta.');loop();
+  });
+}
+document.addEventListener('visibilitychange',function(){
+  if(!document.hidden&&running&&stream&&!camAlive())ensureCamera().then(function(ok){if(!ok)setStatus('La cámara se detuvo. Toca Pausar y luego Reanudar.',true)});
+});
 
 $('startBtn').addEventListener('click',function(){
   var btn=$('startBtn'); btn.disabled=true; btn.textContent='Iniciando…';
