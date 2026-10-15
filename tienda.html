@@ -246,7 +246,7 @@ svg.chart{width:100%;height:auto;display:block}
 
 <!-- ===================== INVENTARIO + ESCÁNER ===================== -->
 <section class="view" id="view-cap" aria-label="Captura" hidden>
-  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.33</button>
+  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.35</button>
   <div class="capgrid">
   <section class="cam" aria-label="Cámara">
     <div class="stage" id="stage">
@@ -513,7 +513,7 @@ svg.chart{width:100%;height:auto;display:block}
 (function(){
 'use strict';
 
-var APP_VERSION='2.33';
+var APP_VERSION='2.35';
 var API='https://db.ygoprodeck.com/api/v7/';
 var STORAGE='escaner-cartas-v1';
 var STORE_KEYS=['tcgplayer','cardmarket','ebay','coolstuffinc'];
@@ -691,7 +691,32 @@ function nameScore(raw,name){
     }
   }
   /* desempate: entre varias candidatas con el mismo puntaje por subtítulo gana la que coincide con TODO lo leído */
-  return Math.min(1,Math.max(full,contain,trunc,seg)+0.02*Math.max(full,contain,trunc));
+  /* alineación palabra por palabra: una palabra leída que contradice a la del nombre (impact ≠ map) resta; las palabras que sí coinciden en orden suman */
+  var wa=wordAlign(a,b), wS=Math.min(0.97,wa.q*(0.72+0.28*wa.cov)), pen=1-0.5*wa.unm;
+  return Math.min(1,Math.max(Math.max(full,contain,trunc,seg)*pen,wS)+0.02*Math.max(full,contain,trunc));
+}
+function wordAlign(a,b){
+  var R=a.split(' ').filter(function(w){return w.length>=3}), C=b.split(' ');
+  if(!R.length)return {q:0,cov:0,unm:0};
+  var tot=0,got=0,matched=0,pos=0,k,idx=[],bad=0;
+  function ws(x,y){return 1-lev(x,y)/Math.max(x.length,y.length)}
+  R.forEach(function(w,ri){
+    tot+=w.length; var best=0,bi=-1;
+    for(k=pos;k<C.length;k++){var sc=ws(w,C[k]); if(sc>best){best=sc;bi=k}}
+    if(best>=0.7){got+=best*w.length;matched+=C[bi].length;pos=bi+1;idx[ri]=bi}
+    else idx[ri]=-1;
+  });
+  /* palabra leída sin pareja que cae en un hueco donde el nombre tiene otra palabra distinta = sustitución (contradicción) */
+  var prev=-1;
+  R.forEach(function(w,ri){
+    if(idx[ri]>=0){prev=idx[ri];return}
+    if(w.length<4)return;
+    var next=C.length,j;
+    for(j=ri+1;j<R.length;j++)if(idx[j]>=0){next=idx[j];break}
+    var slot=[]; for(k=prev+1;k<next;k++)slot.push(C[k]);
+    if(slot.length&&!slot.some(function(c){return ws(w,c)>=0.45}))bad+=w.length;
+  });
+  return {q:got/tot,cov:matched/b.replace(/ /g,'').length,unm:bad/tot};
 }
 function nameQueries(raw){
   var t=cleanName(raw), out=[];
@@ -769,7 +794,7 @@ var lastCodeText='', stream=null, worker=null, workerN=null, curMode=null, runni
 var setCache=new Map(), cardCache=new Map(), nameCache=new Map(), audioCtx=null, tagTimer=null;
 var lastCodeRaw='', lastNameRaw='';
 var work=document.createElement('canvas'), sigCv=document.createElement('canvas'), zoomCv=document.createElement('canvas'), workN=document.createElement('canvas'), tightCv=document.createElement('canvas'), thumbCv=document.createElement('canvas');
-var lastEs='', known={map:{},list:[]}, sharpMax=0, blurSkips=0;
+var codeHist=[], lastEs='', known={map:{},list:[]}, sharpMax=0, blurSkips=0;
 sigCv.width=24; sigCv.height=34;
 
 function h(tagName,props){
@@ -1573,8 +1598,11 @@ function codeStep(bi,flip,adapt,mask){
   var narrow=b.length>2; lastBandRect=b;
   var cv=grabRegion(narrow?b[2]:0,narrow?b[3]:1,b[0],b[1],whole?1400:1100,flip,adapt,mask&&!narrow);
   dbgShow('dbgCode',cv);
+  var hist={b:b.slice(),c:null,t:''};
+  try{var cc=document.createElement('canvas'),kk=Math.min(1,700/cv.width);cc.width=Math.round(cv.width*kk);cc.height=Math.round(cv.height*kk);cc.getContext('2d').drawImage(cv,0,0,cc.width,cc.height);hist.c=cc;codeHist.push(hist);if(codeHist.length>4)codeHist.shift()}catch(e){}
   return ocrCodeBoth(cv,narrow?'line':'code').then(function(res){
     lastCodeRaw=String(res.data.text||'').replace(/\s+/g,' ').trim(); lastCodeText=String(res.data.text||'');
+    hist.t=lastCodeRaw;
     var toks=extractTokens(res.data);
     return refine(res).then(function(r2){
       if(r2&&r2.data){
@@ -1959,8 +1987,9 @@ function handleName(r){
     else setStatus('Confirmando "'+top.card.name+'"…');
   }else if(top.s<SUGGEST&&top.s>=0.50){
     /* lectura sucia pero con 1–2 candidatas claramente por encima del resto: se propone, tú confirmas */
-    if(weakHit(top.card.id))freeze(r.ranked.filter(function(x){return x.s>=Math.max(0.4,top.s-0.2)}).slice(0,4),'Lectura dudosa. ¿Es alguna de estas? (leí "'+r.raw+'")');
-    else setStatus('Leyendo… ('+Math.round(top.s*100)+'% de seguridad)');
+    /* un nombre que no coincide bien suele ser de una carta en otro idioma: primero se agotan las franjas del código y solo después se ofrecen sugerencias */
+    if(failTicks>=BANDS_FIT.length&&weakHit(top.card.id))freeze(r.ranked.filter(function(x){return x.s>=Math.max(0.4,top.s-0.2)}).slice(0,4),'Lectura dudosa. ¿Es alguna de estas? (leí "'+r.raw+'")');
+    else setStatus('Leyendo el código… (nombre parecido a '+Math.round(top.s*100)+'%)');
   }else if(top.s>=SUGGEST){
     if(weakHit(top.card.id))freeze(r.ranked.slice(0,5),(top.s>=AUTO?'Hay cartas muy parecidas. ¿Cuál es?':'Seguridad entre 85% y 88%. ¿Es alguna de estas?')+' (leí "'+r.raw+'")');
     else setStatus('Leyendo… ('+Math.round(top.s*100)+'% de seguridad)');
@@ -2150,6 +2179,15 @@ function buildReport(){
     var k=Math.min((W-2*pad)/c.width,1), cw=Math.round(c.width*k), ch=Math.round(c.height*k);
     ctx.fillStyle='#888'; ctx.fillRect(pad,y,W-2*pad,ch); ctx.drawImage(c,pad,y,cw,ch); y+=ch+12;
   });
+  if(codeHist.length){
+    text('Últimas franjas del código probadas','bold 20px sans-serif','#444');
+    codeHist.forEach(function(e){
+      if(!e.c)return;
+      text('franja '+e.b.map(function(x){return Math.round(x*100)}).join('-')+' · leyó: "'+(e.t||'').slice(0,50)+'"','16px monospace','#555');
+      var kc=Math.min((W-2*pad)/e.c.width,1), cw2=Math.round(e.c.width*kc), ch2=Math.round(e.c.height*kc);
+      ctx.fillStyle='#888'; ctx.fillRect(pad,y,W-2*pad,ch2); ctx.drawImage(e.c,pad,y,cw2,ch2); y+=ch2+8;
+    });
+  }
   var opts=$('opts');
   if(opts&&!opts.hidden){
     text('Sugerencias en pantalla: '+$('optsTitle').textContent,'bold 22px sans-serif');
