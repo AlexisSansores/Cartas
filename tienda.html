@@ -241,7 +241,7 @@ svg.chart{width:100%;height:auto;display:block}
 
 <!-- ===================== INVENTARIO + ESCÁNER ===================== -->
 <section class="view" id="view-cap" aria-label="Captura" hidden>
-  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.7</button>
+  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.9</button>
   <div class="capgrid">
   <section class="cam" aria-label="Cámara">
     <div class="stage" id="stage">
@@ -501,7 +501,7 @@ svg.chart{width:100%;height:auto;display:block}
 (function(){
 'use strict';
 
-var APP_VERSION='2.7';
+var APP_VERSION='2.9';
 var API='https://db.ygoprodeck.com/api/v7/';
 var STORAGE='escaner-cartas-v1';
 var STORE_KEYS=['tcgplayer','cardmarket','ebay','coolstuffinc'];
@@ -792,7 +792,7 @@ function tcgLink(it){return 'https://www.tcgplayer.com/search/yugioh/product?pro
 function money(n){return '$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
 function setStatus(msg,isErr){statusEl.textContent=msg;statusEl.className='status'+(isErr?' err':'')}
-function setDbg(){dbgEl.textContent=(lastCodeRaw||lastNameRaw)?('leí → código: "'+lastCodeRaw.slice(0,60)+'" · nombre: "'+lastNameRaw.slice(0,60)+'"'+(video&&video.videoWidth?' · cámara '+video.videoWidth+'×'+video.videoHeight:'')):''}
+function setDbg(){dbgEl.textContent=(lastCodeRaw||lastNameRaw)?('leí → código: "'+lastCodeRaw.slice(0,60)+'" · nombre: "'+lastNameRaw.slice(0,60)+'"'+(video&&video.videoWidth?' · cámara '+video.videoWidth+'×'+video.videoHeight:'')+(ndb.ready?' · lista de cartas OK':' · ⚠ lista de cartas SIN descargar (Ajustes → Lectura de nombres)')):''}
 function setGuide(cls){guide.className='guide'+(prefs.dist==='near'?' near':'')+(cls?' '+cls:'')}
 function applyConf(){$('confBtn').textContent=prefs.confirmAll?'Confirmar: todas':'Confirmar: dudosas'}
 function applyDist(){$('stage').classList.toggle('near',prefs.dist==='near');$('distBtn').textContent=prefs.dist==='near'?'Distancia: cerca':'Distancia: lejos';setGuide('')}
@@ -1157,7 +1157,7 @@ function showOptions(entries,title,frozen){
 }
 /* congela la lectura hasta que la persona confirme si es o no */
 function freeze(entries,title){
-  state='confirm'; weak=0; votes=[]; nameVotes=[];
+  state='confirm'; weak=0; votes=[]; nameVotes=[]; weakVotes=[];
   try{rejSig=signature()}catch(e){rejSig=null}
   rejChange=0;
   setGuide('confirm');
@@ -1742,6 +1742,8 @@ function decide(top){
   if(prefs.confirmAll)return freeze([top],'¿Es esta carta?');
   return commitCard(top.card);
 }
+var weakVotes=[];
+function weakHit(id){var now=Date.now();weakVotes.push({id:id,t:now});weakVotes=weakVotes.filter(function(v){return now-v.t<7000});return weakVotes.filter(function(v){return v.id===id}).length>=2}
 function handleName(r){
   if(r&&r.ranked)r.ranked=r.ranked.filter(function(x){return !rejected[x.card.id]});
   if(!r||!r.ranked.length){weak=0;setGuide('');setStatus('Buscando el código o el nombre…');return}
@@ -1754,15 +1756,13 @@ function handleName(r){
     setStatus('Confirmando "'+top.card.name+'"…');
   }else if(top.s<SUGGEST&&top.s>=0.55&&(r.ranked.length<3||top.s-r.ranked[2].s>=0.18)){
     /* lectura sucia pero con 1–2 candidatas claramente por encima del resto: se propone, tú confirmas */
-    weak++;
-    if(weak>=2)freeze(r.ranked.filter(function(x){return x.s>=top.s-0.2}).slice(0,4),'Lectura dudosa. ¿Es alguna de estas? (leí "'+r.raw+'")');
+    if(weakHit(top.card.id))freeze(r.ranked.filter(function(x){return x.s>=top.s-0.2}).slice(0,4),'Lectura dudosa. ¿Es alguna de estas? (leí "'+r.raw+'")');
     else setStatus('Leyendo… ('+Math.round(top.s*100)+'% de seguridad)');
   }else if(top.s>=SUGGEST){
-    weak++;
-    if(weak>=2)freeze(r.ranked.slice(0,5),'Seguridad entre 85% y 88%. ¿Es alguna de estas? (leí "'+r.raw+'")');
+    if(weakHit(top.card.id))freeze(r.ranked.slice(0,5),'Seguridad entre 85% y 88%. ¿Es alguna de estas? (leí "'+r.raw+'")');
     else setStatus('Leyendo… ('+Math.round(top.s*100)+'% de seguridad)');
   }else{
-    weak=0;setGuide('');setStatus('Buscando el código o el nombre…');
+    weak=Math.max(0,weak-1);setGuide('');setStatus('Buscando el código o el nombre…');
   }
 }
 function loop(){
