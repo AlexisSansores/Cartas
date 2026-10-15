@@ -245,7 +245,7 @@ svg.chart{width:100%;height:auto;display:block}
 
 <!-- ===================== INVENTARIO + ESCÁNER ===================== -->
 <section class="view" id="view-cap" aria-label="Captura" hidden>
-  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.19</button>
+  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.21</button>
   <div class="capgrid">
   <section class="cam" aria-label="Cámara">
     <div class="stage" id="stage">
@@ -277,7 +277,9 @@ svg.chart{width:100%;height:auto;display:block}
     <form class="manual" id="manualForm">
       <input class="txt" id="manualIn" type="text" placeholder="Código (LOB-EN005) o nombre de la carta" autocomplete="off" aria-label="Código o nombre">
       <button class="btn" type="submit">Buscar</button>
+      <button class="btn" type="button" id="micBtn" aria-label="Dictar el código" title="Dictar el código de la carta">🎤 Dictar</button>
     </form>
+    <div class="note" id="micMsg" aria-live="polite"></div>
   </section>
   <section class="sugg" aria-label="Sugerencias">
     <div class="opts" id="opts" hidden>
@@ -509,7 +511,7 @@ svg.chart{width:100%;height:auto;display:block}
 (function(){
 'use strict';
 
-var APP_VERSION='2.19';
+var APP_VERSION='2.21';
 var API='https://db.ygoprodeck.com/api/v7/';
 var STORAGE='escaner-cartas-v1';
 var STORE_KEYS=['tcgplayer','cardmarket','ebay','coolstuffinc'];
@@ -1807,7 +1809,11 @@ function decide(top){
 var weakVotes=[];
 function weakHit(id){var now=Date.now();weakVotes.push({id:id,t:now});weakVotes=weakVotes.filter(function(v){return now-v.t<7000});return weakVotes.filter(function(v){return v.id===id}).length>=2}
 function handleName(r){
-  if(r&&r.ranked)r.ranked=r.ranked.filter(function(x){return !rejected[x.card.id]});
+  if(r&&r.ranked){
+    /* misma carta con distinto id (ilustraciones alternativas) o repetida: cuenta como una sola, para que un empate consigo misma no frene la aceptación */
+    var seenN={};
+    r.ranked=r.ranked.filter(function(x){return !rejected[x.card.id]}).filter(function(x){var k=normName(x.card.name);if(seenN[k])return false;seenN[k]=1;return true});
+  }
   if(!r||!r.ranked.length){weak=0;setGuide('');setStatus('Buscando el código o el nombre…');return}
   var top=r.ranked[0], second=r.ranked[1], now=Date.now();
   if(top.s>=AUTO&&(!second||top.s-second.s>=0.06)){
@@ -1952,10 +1958,50 @@ function manualByName(raw){
     setStatus('Elige la carta de la lista de opciones.');
   });
 }
+/* ---------- dictado del código por voz ---------- */
+var SPK_D={cero:'0',uno:'1',una:'1',un:'1',dos:'2',tres:'3',cuatro:'4',cinco:'5',seis:'6',siete:'7',ocho:'8',nueve:'9',diez:'10',once:'11',doce:'12',trece:'13',catorce:'14',quince:'15',dieciseis:'16',diecisiete:'17',dieciocho:'18',diecinueve:'19',veinte:'20',veintiuno:'21',veintidos:'22',veintitres:'23',veinticuatro:'24',veinticinco:'25',veintiseis:'26',veintisiete:'27',veintiocho:'28',veintinueve:'29',treinta:'30'};
+var SPK_L={a:'A',be:'B',b:'B',ce:'C',c:'C',se:'C',de:'D',d:'D',e:'E',efe:'F',f:'F',ge:'G',g:'G',hache:'H',ache:'H',h:'H',i:'I',jota:'J',j:'J',ka:'K',k:'K',ele:'L',l:'L',eme:'M',m:'M',ene:'N',n:'N',o:'O',pe:'P',p:'P',cu:'Q',q:'Q',erre:'R',ere:'R',r:'R',ese:'S',s:'S',te:'T',t:'T',u:'U',uve:'V',ve:'V',v:'V',equis:'X',x:'X',ye:'Y',y:'Y',zeta:'Z',z:'Z'};
+function spokenToCode(t){
+  var w=String(t||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9 ]+/g,' ').split(/\s+/).filter(Boolean), out='', i;
+  for(i=0;i<w.length;i++){
+    var x=w[i];
+    if(x==='guion'||x==='menos'||x==='raya'||x==='de'&&i>0&&/^[a-z]{3,}$/.test(w[i+1]||'')&&false)continue;
+    if(x==='doble'&&(w[i+1]==='ve'||w[i+1]==='u')){out+='W';i++;continue}
+    if(x==='en'||x==='ingles'){out+='EN';continue}
+    if(SPK_D[x]!==undefined){out+=SPK_D[x];continue}
+    if(/^[0-9]+$/.test(x)){out+=x;continue}
+    if(SPK_L[x]){out+=SPK_L[x];continue}
+    out+=x.toUpperCase();
+  }
+  return out;
+}
+(function(){
+  var SR=window.SpeechRecognition||window.webkitSpeechRecognition, btn=$('micBtn'), msg=$('micMsg');
+  if(!SR){btn.hidden=true;return}
+  var rec=null, busy=false;
+  function say(t){msg.textContent=t||''}
+  btn.addEventListener('click',function(){
+    if(busy&&rec){try{rec.stop()}catch(e){}return}
+    rec=new SR(); rec.lang='es-MX'; rec.interimResults=false; rec.maxAlternatives=6; rec.continuous=false;
+    busy=true; btn.textContent='⏹ Escuchando…'; say('Di el código, por ejemplo: «tama e ene cero cero ocho».');
+    rec.onresult=function(ev){
+      var r=ev.results[0], alts=[], k;
+      for(k=0;k<r.length;k++)alts.push(r[k].transcript);
+      var code=null, heard=alts[0]||'';
+      for(k=0;k<alts.length&&!code;k++){var c=spokenToCode(alts[k]);if(looksLikeCode(c)&&candidateCodes(c).length){code=c;heard=alts[k]}}
+      say('Escuché: «'+heard+'»'+(code?' → '+code:''));
+      $('manualIn').value=code||heard;
+      $('manualForm').dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}));
+    };
+    rec.onerror=function(ev){say(ev.error==='not-allowed'||ev.error==='service-not-allowed'?'Falta el permiso del micrófono. Actívalo en los ajustes del sitio.':(ev.error==='no-speech'?'No te escuché. Intenta otra vez.':'No pude escuchar ('+ev.error+').'))};
+    rec.onend=function(){busy=false;btn.textContent='🎤 Dictar'};
+    try{rec.start()}catch(e){busy=false;btn.textContent='🎤 Dictar';say('No se pudo iniciar el micrófono.')}
+  });
+})();
 $('manualForm').addEventListener('submit',function(e){
   e.preventDefault();
   var raw=$('manualIn').value.trim(); if(!raw)return;
-  var cands=looksLikeCode(raw)?candidateCodes(raw.toUpperCase().replace(/\s+/g,'')):[], found=null;
+  var cands=looksLikeCode(raw)?snapCandidates(candidateCodes(raw.toUpperCase().replace(/\s+/g,'')),known).slice(0,8):[], found=null;
   var p=Promise.resolve();
   if(cands.length){
     setStatus('Buscando '+raw.toUpperCase()+'…');
