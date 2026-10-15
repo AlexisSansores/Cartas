@@ -1,0 +1,1810 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Tienda Yu-Gi-Oh!</title>
+<meta name="theme-color" content="#1f2a44">
+<link rel="manifest" href="tienda.webmanifest">
+<link rel="icon" type="image/png" href="tienda-192.png">
+<link rel="apple-touch-icon" href="tienda-192.png">
+<style>
+/* Layout: cámara fija a la izquierda (arriba en celular) con marco guía y opciones debajo; inventario y valor a la derecha. */
+:root{
+  --bg:#eef0f6; --surface:#ffffff; --surface-2:#f5f6fb; --fg:#14172b; --muted:#596079; --line:#d9dce9;
+  --accent:#3a3fd6; --accent-fg:#ffffff; --good:#12a150; --bad:#c0392b; --warn:#8f5b00;
+  --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#0f111b;--surface:#171a28;--surface-2:#1d2132;--fg:#e9ebf7;--muted:#9aa1bd;--line:#2b3047;--accent:#9296ff;--accent-fg:#0f1020;--good:#2fd47a;--bad:#ff8a80;--warn:#e0a83a;color-scheme:dark}
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--font);font-size:15px;line-height:1.45}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{max-width:1120px;margin:0 auto;padding:12px 16px 40px;display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+@media (min-width:900px){.app{grid-template-columns:minmax(0,5fr) minmax(0,6fr);align-items:start}.cam{position:sticky;top:12px}}
+header{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 16px}
+h1{font-size:1.3rem;margin:0;letter-spacing:-.01em}
+.stats{display:flex;flex-wrap:wrap;gap:2px 14px;font-family:var(--mono);font-size:.8rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.stats b{color:var(--fg);font-weight:600}
+
+.stage{position:relative;background:#000;border-radius:14px;overflow:hidden;aspect-ratio:1/1}
+.stage.near{aspect-ratio:4/3}
+.guide.near{top:0;left:0;width:100%;height:100%;aspect-ratio:auto;transform:none;border-radius:0;border-width:4px;box-shadow:none}
+.guide.near .zone{display:none}
+.guide.near.ok{box-shadow:0 0 0 4px rgba(18,161,80,.35) inset}
+@media (min-width:900px){.stage{aspect-ratio:4/3}}
+video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.guide{position:absolute;top:7%;left:50%;height:86%;aspect-ratio:59/86;transform:translateX(-50%);border:3px solid rgba(255,255,255,.85);border-radius:10px;box-shadow:0 0 0 9999px rgba(0,0,0,.35);transition:border-color .15s,box-shadow .15s}
+.guide.reading{border-color:#fff;animation:pulse 1s ease-in-out infinite}
+.guide.ok{border-color:var(--good);box-shadow:0 0 0 9999px rgba(0,0,0,.3),0 0 0 4px rgba(18,161,80,.35) inset}
+@keyframes pulse{50%{border-color:rgba(255,255,255,.4)}}
+@media (prefers-reduced-motion: reduce){.guide.reading{animation:none}}
+.zone{position:absolute;left:0;right:0;border-top:1px dashed rgba(255,255,255,.45);border-bottom:1px dashed rgba(255,255,255,.45);pointer-events:none}
+.zone span{position:absolute;right:6px;bottom:1px;font-size:.6rem;font-family:var(--mono);color:rgba(255,255,255,.75)}
+.zone.name{top:2%;height:9%}
+.zone.code{top:60%;height:24%}
+.tag{position:absolute;left:8px;right:8px;bottom:8px;background:rgba(0,0,0,.72);color:#fff;border-radius:10px;padding:8px 10px;font-size:.88rem;display:none}
+.tag.on{display:block}
+.tag.ok{background:rgba(10,110,55,.92)}
+.tag b{display:block;font-size:1rem}
+.tag .sub{font-family:var(--mono);font-size:.78rem;opacity:.9}
+.start{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:20px;text-align:center;color:#fff;background:#12141f}
+.start p{margin:0;max-width:36ch;font-size:.9rem;color:#c9cde4}
+.camrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;align-items:center}
+.status{margin-top:10px;font-size:.9rem;color:var(--muted);min-height:1.4em}
+.status.err{color:var(--bad)}
+.dbg{margin-top:2px;font-family:var(--mono);font-size:.7rem;color:var(--muted);overflow-wrap:anywhere}
+.btn{min-height:44px;padding:0 16px;border-radius:10px;border:1px solid var(--line);background:var(--surface);cursor:pointer;font-weight:600}
+.btn:hover{border-color:var(--accent)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.btn.small{min-height:36px;padding:0 12px;font-size:.88rem}
+.btn.ghost{background:transparent}
+select.sel,input.txt{min-height:44px;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:0 10px;min-width:0}
+.manual{display:flex;gap:8px;margin-top:10px}
+.manual input{flex:1}
+
+.opts{margin-top:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px}
+.opts .t{font-size:.84rem;color:var(--muted);display:flex;justify-content:space-between;gap:8px;align-items:center}
+.cands{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px}
+.cand{display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);cursor:pointer;text-align:center;font-size:.76rem;line-height:1.25}
+.cand:hover{border-color:var(--accent)}
+.guide.confirm{border-color:#e8a317;box-shadow:0 0 0 9999px rgba(0,0,0,.35),0 0 0 4px rgba(232,163,23,.4) inset;animation:none}
+.guide.near.confirm{box-shadow:0 0 0 4px rgba(232,163,23,.4) inset}
+.cand img{width:100%;max-width:84px;aspect-ratio:59/86;object-fit:cover;border-radius:4px;background:var(--line)}
+.cand .pct{font-family:var(--mono);color:var(--muted);font-size:.68rem}
+
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
+.bar h2{margin:0;font-size:1.05rem}
+.tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.lbl{font-size:.8rem;color:var(--muted)}
+.list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.row{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;align-items:center}
+.nm{font-weight:600;overflow-wrap:anywhere}
+.meta{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;margin-top:3px;font-size:.82rem;color:var(--muted)}
+.code{font-family:var(--mono);font-size:.78rem;color:var(--fg)}
+.pill{font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--line);color:var(--fg)}
+.rsel{min-height:34px;border:1px solid var(--warn);border-radius:8px;background:var(--surface);padding:0 6px;font-size:.82rem;max-width:100%;min-width:0}
+.side{display:flex;align-items:center;gap:10px;justify-content:flex-end}
+.price{text-align:right;font-family:var(--mono);font-size:.84rem;font-variant-numeric:tabular-nums;line-height:1.25}
+.price small{display:block;color:var(--muted);font-size:.72rem}
+.step{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.step button{width:34px;height:34px;border:0;background:var(--surface);cursor:pointer;font-size:1.1rem;line-height:1}
+.step span{min-width:28px;text-align:center;font-family:var(--mono)}
+.rm{border:0;background:transparent;color:var(--muted);cursor:pointer;min-height:34px;padding:0 6px;border-radius:8px;font-size:.82rem}
+.rm:hover{color:var(--bad)}
+.tcg{grid-column:1/-1;font-size:.75rem;color:var(--accent)}
+.breakdown{grid-column:1/-1;font-size:.75rem;color:var(--muted);font-family:var(--mono);overflow-wrap:anywhere}
+.empty{border:1px dashed var(--line);border-radius:10px;padding:18px;text-align:center;color:var(--muted)}
+.note{font-size:.8rem;color:var(--muted)}
+@media (max-width:480px){.row{grid-template-columns:minmax(0,1fr)}.side{justify-content:space-between}}
+/* ---- Estructura de la app (pestañas) ---- */
+body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
+.top{position:sticky;top:0;z-index:6;background:var(--bg);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.top h1{font-size:1.1rem;margin:0}
+.top .sub{font-size:.72rem;color:var(--muted);font-family:var(--mono)}
+.nav{position:fixed;left:0;right:0;bottom:0;z-index:10;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+.nav button{border:0;background:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:6px 2px;min-height:58px;font-size:.66rem;color:var(--muted);cursor:pointer}
+.nav button[aria-current="page"]{color:var(--accent);font-weight:700}
+.nav svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.view{max-width:1120px;margin:0 auto;padding:14px 16px 28px}
+.invgrid{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+@media (min-width:900px){.invgrid{grid-template-columns:minmax(0,5fr) minmax(0,6fr);align-items:start}.cam{position:sticky;top:64px}}
+.vtitle{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 12px;margin:0 0 10px}
+.vtitle h2{margin:0;font-size:1.15rem}
+.vtitle .stats{font-size:.78rem}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-items:end}
+.fld{display:flex;flex-direction:column;gap:3px;font-size:.74rem;color:var(--muted);min-width:0}
+.fld.wide{grid-column:1/-1}
+textarea.txt{min-height:90px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);width:100%;font-family:var(--mono);font-size:.82rem}
+input.txt,select.sel{width:100%}
+.sm{min-height:36px}
+.fld .sel,.fld .txt{color:var(--fg)}
+.entry{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;align-items:center}
+.entry .t{font-weight:600;overflow-wrap:anywhere}
+.entry .m{font-size:.78rem;color:var(--muted);overflow-wrap:anywhere}
+.entry .a{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right;font-size:.9rem}
+.entry .a small{display:block;color:var(--muted);font-size:.72rem}
+.entry .a .pos{color:var(--good)}.entry .a .neg{color:var(--bad)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px}
+.kpi span{display:block;font-size:.74rem;color:var(--muted)}
+.kpi b{display:block;font-size:1.25rem;font-family:var(--mono);font-variant-numeric:tabular-nums;margin-top:2px}
+.kpi.pos b{color:var(--good)}.kpi.neg b{color:var(--bad)}
+.tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+table.tbl{border-collapse:collapse;width:100%;font-size:.82rem;font-variant-numeric:tabular-nums}
+.tbl th,.tbl td{padding:7px 10px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line)}
+.tbl th:first-child,.tbl td:first-child{text-align:left}
+.tbl thead th{background:var(--surface-2);font-weight:600;font-size:.74rem;color:var(--muted)}
+.tbl tfoot td{font-weight:700;background:var(--surface-2)}
+.stack{display:flex;flex-direction:column;gap:12px}
+.badge{font-size:.68rem;font-weight:700;padding:2px 8px;border-radius:999px}
+.badge.ok{background:rgba(18,161,80,.16);color:var(--good)}
+.badge.re{background:rgba(224,168,58,.2);color:var(--warn)}
+.badge.ag{background:rgba(192,57,43,.16);color:var(--bad)}
+.badge.rv{background:rgba(192,57,43,.16);color:var(--bad)}
+.more{grid-column:1/-1;font-size:.8rem}
+.more summary{cursor:pointer;color:var(--muted);font-family:var(--mono);font-size:.72rem;padding:4px 0}
+.more .form{margin-top:8px}
+.csel{min-height:36px;border:1px solid var(--line);border-radius:8px;background:var(--surface);padding:0 6px;font-size:.82rem;max-width:100%;min-width:0}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(74px + env(safe-area-inset-bottom));background:#14172b;color:#fff;padding:10px 16px;border-radius:10px;font-size:.88rem;z-index:30;max-width:90vw;box-shadow:0 6px 24px rgba(0,0,0,.3)}
+.picker{display:flex;flex-direction:column;gap:6px}
+.picker select{width:100%}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:4px 12px;font-size:.8rem;cursor:pointer;min-height:32px}
+.chip[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.warnbox{border:1px solid var(--warn);border-radius:10px;padding:8px 10px;font-size:.82rem;color:var(--warn)}
+svg.chart{width:100%;height:auto;display:block}
+.chart text{fill:var(--muted);font-size:17px;font-family:var(--mono)}
+.top{flex-wrap:nowrap}
+</style>
+</head>
+<body>
+<header class="top">
+  <div><h1>Tienda Yu-Gi-Oh!</h1><div class="sub" id="topSub"></div></div>
+  <button class="btn small primary" type="button" id="installTop" hidden>Instalar app</button>
+</header>
+
+<main>
+<!-- ===================== INVENTARIO + ESCÁNER ===================== -->
+<section class="view" id="view-inv" aria-label="Inventario">
+  <div class="invgrid">
+  <section class="cam" aria-label="Cámara">
+    <div class="stage" id="stage">
+      <video id="video" playsinline muted></video>
+      <div class="guide" id="guide">
+        <div class="zone name"><span>nombre</span></div>
+        <div class="zone code"><span>código</span></div>
+      </div>
+      <div class="tag" id="tag"></div>
+      <div class="start" id="start">
+        <strong>Muestra cada carta a la cámara</strong>
+        <p>Se lee sola, sin tomar foto. Acércala a la cámara: basta con que se vean bien el código del set (debajo de la ilustración) o el nombre. Si no enfoca, aléjala un poco. Con el botón «Distancia» puedes volver al marco completo.</p>
+        <button class="btn primary" type="button" id="startBtn">Iniciar cámara</button>
+      </div>
+    </div>
+    <div class="status" id="status" aria-live="polite">La cámara está apagada.</div>
+    <div class="dbg" id="dbg"></div>
+    <div class="camrow">
+      <button class="btn small" type="button" id="pauseBtn" disabled>Pausar</button>
+      <button class="btn small" type="button" id="distBtn">Distancia: cerca</button>
+      <button class="btn small" type="button" id="confBtn">Confirmar: dudosas</button>
+      <select class="sel" id="camSel" aria-label="Elegir cámara" hidden></select>
+    </div>
+    <form class="manual" id="manualForm">
+      <input class="txt" id="manualIn" type="text" placeholder="Código (LOB-EN005) o nombre de la carta" autocomplete="off" aria-label="Código o nombre">
+      <button class="btn" type="submit">Buscar</button>
+    </form>
+    <div class="opts" id="opts" hidden>
+      <div class="t"><span id="optsTitle"></span><button class="btn small ghost" type="button" id="optsClose">Cerrar</button></div>
+      <div class="cands" id="cands"></div>
+    </div>
+  </section>
+
+  <section class="panel" aria-label="Lista de inventario">
+    <div class="vtitle">
+      <h2 id="invTitle">Inventario</h2>
+      <div class="stats" id="stats"></div>
+    </div>
+    <div class="form">
+      <label class="fld wide"><span>Buscar en el inventario</span><input class="txt" id="invFilter" type="search" placeholder="Nombre, código o SKU" autocomplete="off"></label>
+    </div>
+    <div class="chips" id="invChips" role="group" aria-label="Filtrar por estado">
+      <button class="chip" type="button" data-f="all" aria-pressed="true">Todos</button>
+      <button class="chip" type="button" data-f="low" aria-pressed="false">Por reordenar</button>
+      <button class="chip" type="button" data-f="out" aria-pressed="false">Agotados</button>
+      <button class="chip" type="button" data-f="pend" aria-pressed="false">Sin impresión</button>
+    </div>
+    <ul class="list" id="list"></ul>
+    <div class="empty" id="empty">Aún no hay productos. Inicia la cámara y muestra la primera carta, o agrega un producto manual.</div>
+    <button class="btn small" type="button" id="moreBtn" hidden>Mostrar más</button>
+    <details class="more" id="prodBox">
+      <summary>+ Agregar producto manual (sobres, cajas, fundas…)</summary>
+      <form class="form" id="prodForm">
+        <label class="fld wide"><span>Nombre del producto</span><input class="txt" id="prodName" required placeholder="Ej. Sobre Rage of the Abyss"></label>
+        <label class="fld"><span>Tipo</span><select class="sel" id="prodTipo"></select></label>
+        <label class="fld"><span>Idioma</span><select class="sel" id="prodLang"></select></label>
+        <label class="fld"><span>Cantidad</span><input class="txt" id="prodQty" type="number" min="0" step="1" value="1" inputmode="numeric"></label>
+        <label class="fld"><span>Costo unitario (MXN)</span><input class="txt" id="prodCost" type="number" min="0" step="0.01" inputmode="decimal"></label>
+        <label class="fld"><span>Precio de venta (MXN)</span><input class="txt" id="prodPrice" type="number" min="0" step="0.01" inputmode="decimal"></label>
+        <label class="fld"><span>Stock mínimo</span><input class="txt" id="prodMin" type="number" min="0" step="1" value="0" inputmode="numeric"></label>
+        <div class="fld"><span>&nbsp;</span><button class="btn primary" type="submit">Agregar</button></div>
+      </form>
+    </details>
+    <div class="bar">
+      <div class="tools">
+        <button class="btn small" type="button" id="refreshBtn">Actualizar precios</button>
+        <button class="btn small primary" type="button" id="csvBtn">Exportar CSV</button>
+      </div>
+      <button class="btn small ghost" type="button" id="clearBtn">Vaciar inventario</button>
+    </div>
+    <p class="note">Precios en USD de YGOPRODeck, que reúne TCGplayer, Cardmarket, eBay, CoolStuffInc y Amazon. El precio de venta en pesos sale del precio TCGplayer por el tipo de cambio, a menos que captures uno propio en «Detalles». La búsqueda por nombre funciona con el nombre en inglés. El escáner necesita internet para identificar cartas; el resto de la app funciona sin conexión.</p>
+  </section>
+  </div>
+</section>
+
+<!-- ===================== VENTAS ===================== -->
+<section class="view" id="view-ven" aria-label="Ventas" hidden>
+  <div class="stack">
+    <div class="vtitle"><h2>Ventas</h2><div class="stats" id="venSum"></div></div>
+    <form class="panel" id="venForm">
+      <div class="form">
+        <label class="fld"><span>Fecha</span><input class="txt" id="venFecha" type="date" required></label>
+        <div class="fld wide"><span>Producto</span><div class="picker" id="venPicker"></div></div>
+        <label class="fld"><span>Cantidad</span><input class="txt" id="venQty" type="number" min="1" step="1" value="1" inputmode="numeric" required></label>
+        <label class="fld"><span>Precio unitario (MXN)</span><input class="txt" id="venPrice" type="number" min="0" step="0.01" inputmode="decimal" required></label>
+        <label class="fld"><span>Descuento %</span><input class="txt" id="venDisc" type="number" min="0" max="100" step="1" value="0" inputmode="numeric"></label>
+        <label class="fld"><span>Método de pago</span><select class="sel" id="venPay"></select></label>
+        <label class="fld wide"><span>Notas / Cliente</span><input class="txt" id="venNotes" type="text" autocomplete="off"></label>
+      </div>
+      <div class="bar"><div class="stats" id="venTotal">Total: $0.00</div><button class="btn primary" type="submit">Registrar venta</button></div>
+      <div class="warnbox" id="venWarn" hidden></div>
+    </form>
+    <div class="bar">
+      <label class="fld" style="flex-direction:row;align-items:center;gap:8px"><span>Mes</span><select class="sel sm" id="venMonth"></select></label>
+      <button class="btn small" type="button" id="venCsv">Exportar CSV</button>
+    </div>
+    <ul class="list" id="venList"></ul>
+    <div class="empty" id="venEmpty">Aún no hay ventas en este periodo.</div>
+  </div>
+</section>
+
+<!-- ===================== COMPRAS ===================== -->
+<section class="view" id="view-com" aria-label="Compras" hidden>
+  <div class="stack">
+    <div class="vtitle"><h2>Compras / entradas</h2><div class="stats" id="comSum"></div></div>
+    <form class="panel" id="comForm">
+      <div class="form">
+        <label class="fld"><span>Fecha</span><input class="txt" id="comFecha" type="date" required></label>
+        <div class="fld wide"><span>Producto</span><div class="picker" id="comPicker"></div></div>
+        <label class="fld"><span>Cantidad</span><input class="txt" id="comQty" type="number" min="1" step="1" value="1" inputmode="numeric" required></label>
+        <label class="fld"><span>Costo unitario (MXN)</span><input class="txt" id="comCost" type="number" min="0" step="0.01" inputmode="decimal" required></label>
+        <label class="fld"><span>Proveedor</span><input class="txt" id="comSup" type="text" autocomplete="off"></label>
+        <label class="fld wide"><span>Notas</span><input class="txt" id="comNotes" type="text" autocomplete="off"></label>
+      </div>
+      <div class="bar"><div class="stats" id="comTotal">Total: $0.00</div><button class="btn primary" type="submit">Registrar compra</button></div>
+      <p class="note">El stock sube solo y el costo unitario del producto se actualiza con el promedio ponderado.</p>
+    </form>
+    <div class="bar">
+      <label class="fld" style="flex-direction:row;align-items:center;gap:8px"><span>Mes</span><select class="sel sm" id="comMonth"></select></label>
+      <button class="btn small" type="button" id="comCsv">Exportar CSV</button>
+    </div>
+    <ul class="list" id="comList"></ul>
+    <div class="empty" id="comEmpty">Aún no hay compras en este periodo.</div>
+  </div>
+</section>
+
+<!-- ===================== GASTOS ===================== -->
+<section class="view" id="view-gas" aria-label="Gastos" hidden>
+  <div class="stack">
+    <div class="vtitle"><h2>Gastos del local</h2><div class="stats" id="gasSum"></div></div>
+    <form class="panel" id="gasForm">
+      <div class="form">
+        <label class="fld"><span>Fecha</span><input class="txt" id="gasFecha" type="date" required></label>
+        <label class="fld"><span>Categoría</span><select class="sel" id="gasCat"></select></label>
+        <label class="fld wide"><span>Descripción</span><input class="txt" id="gasDesc" type="text" autocomplete="off" placeholder="Ej. Renta de octubre"></label>
+        <label class="fld"><span>Monto (MXN)</span><input class="txt" id="gasAmt" type="number" min="0" step="0.01" inputmode="decimal" required></label>
+        <label class="fld"><span>Método de pago</span><select class="sel" id="gasPay"></select></label>
+        <label class="fld wide"><span>Notas</span><input class="txt" id="gasNotes" type="text" autocomplete="off"></label>
+      </div>
+      <div class="bar"><span class="note">La mercancía va en Compras, no aquí.</span><button class="btn primary" type="submit">Registrar gasto</button></div>
+    </form>
+    <div class="bar">
+      <label class="fld" style="flex-direction:row;align-items:center;gap:8px"><span>Mes</span><select class="sel sm" id="gasMonth"></select></label>
+      <button class="btn small" type="button" id="gasCsv">Exportar CSV</button>
+    </div>
+    <ul class="list" id="gasList"></ul>
+    <div class="empty" id="gasEmpty">Aún no hay gastos en este periodo.</div>
+  </div>
+</section>
+
+<!-- ===================== RESUMEN ===================== -->
+<section class="view" id="view-res" aria-label="Resumen" hidden>
+  <div class="stack">
+    <div class="vtitle"><h2>Resumen y utilidad</h2>
+      <label class="fld" style="flex-direction:row;align-items:center;gap:8px"><span>Año</span><select class="sel sm" id="resYear"></select></label></div>
+    <div class="kpis" id="resKpis"></div>
+    <div class="panel"><h3 style="margin:0;font-size:.95rem">Ventas vs. gastos por mes</h3><div id="resChart"></div></div>
+    <div class="tblwrap"><table class="tbl" id="resTable"></table></div>
+    <div class="panel"><h3 style="margin:0;font-size:.95rem">Por reordenar o agotados</h3><ul class="list" id="resReorder"></ul><div class="empty" id="resReorderEmpty">Todo en orden: no hay productos por reordenar.</div></div>
+  </div>
+</section>
+
+<!-- ===================== AJUSTES ===================== -->
+<section class="view" id="view-aju" aria-label="Ajustes" hidden>
+  <div class="stack">
+    <div class="vtitle"><h2>Ajustes</h2></div>
+    <div class="panel">
+      <h3 style="margin:0;font-size:.95rem">Precios y tipo de cambio</h3>
+      <div class="tools">
+        <label class="lbl" for="basis">Valor con</label>
+        <select class="sel sm" id="basis" style="width:auto">
+          <option value="tcg">TCGplayer (promedio)</option>
+          <option value="print">Precio de la impresión</option>
+          <option value="stores">Promedio de tiendas</option>
+        </select>
+        <label class="lbl" for="fx">USD→MXN</label>
+        <input class="txt sm" id="fx" type="number" inputmode="decimal" min="0" step="0.01" placeholder="ej. 18.50" style="width:92px" aria-label="Tipo de cambio dólar a peso">
+        <button class="btn small" type="button" id="fxAutoBtn">Auto</button>
+      </div>
+      <div class="dbg" id="fxInfo"></div>
+    </div>
+    <div class="panel">
+      <h3 style="margin:0;font-size:.95rem">Listas desplegables</h3>
+      <p class="note" style="margin:0">Una opción por línea. Se usan en productos, ventas, compras y gastos.</p>
+      <div class="form" id="catBox"></div>
+      <div class="bar"><span class="note" id="catMsg"></span><button class="btn small" type="button" id="catSave">Guardar listas</button></div>
+    </div>
+    <div class="panel">
+      <h3 style="margin:0;font-size:.95rem">Respaldo de datos</h3>
+      <p class="note" style="margin:0">Todo se guarda en este celular. Descarga un respaldo seguido y guárdalo en Drive o mándalo a tu correo; sirve para pasar tus datos a otro celular.</p>
+      <div class="tools">
+        <button class="btn small primary" type="button" id="bkExport">Descargar respaldo</button>
+        <label class="btn small" style="display:inline-flex;align-items:center;cursor:pointer">Restaurar respaldo<input type="file" id="bkImport" accept="application/json,.json" hidden></label>
+      </div>
+      <div class="note" id="bkMsg"></div>
+      <div class="note" id="persistInfo"></div>
+    </div>
+    <div class="panel">
+      <h3 style="margin:0;font-size:.95rem">Instalar la app</h3>
+      <div class="tools"><button class="btn small primary" type="button" id="installBtn" hidden>Instalar en este dispositivo</button></div>
+      <p class="note" style="margin:0" id="installHelp">En Chrome para Android: menú ⋮ → «Agregar a la pantalla principal» o «Instalar app». Una vez instalada abre sin internet y se actualiza sola cuando hay conexión.</p>
+    </div>
+    <div class="panel">
+      <h3 style="margin:0;font-size:.95rem">Zona de peligro</h3>
+      <div class="tools"><button class="btn small" type="button" id="wipeBtn" style="color:var(--bad)">Borrar todos los datos</button></div>
+    </div>
+  </div>
+</section>
+</main>
+
+<nav class="nav" id="nav" aria-label="Secciones">
+  <button type="button" data-v="inv" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>Inventario</button>
+  <button type="button" data-v="ven"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h2l2 10h11l2-7H7"/><circle cx="9" cy="20" r="1.2"/><circle cx="17" cy="20" r="1.2"/></svg>Ventas</button>
+  <button type="button" data-v="com"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h13v9H3z"/><path d="M16 11h3l2 2v4h-5"/><circle cx="7" cy="18" r="1.4"/><circle cx="17" cy="18" r="1.4"/></svg>Compras</button>
+  <button type="button" data-v="gas"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>Gastos</button>
+  <button type="button" data-v="res"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M21 20H3"/></svg>Resumen</button>
+  <button type="button" data-v="aju"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.3l2-1.5-2-3.4-2.3.9a7 7 0 0 0-2.2-1.3L14 3h-4l-.4 2.4a7 7 0 0 0-2.2 1.3l-2.3-.9-2 3.4 2 1.5A7 7 0 0 0 5 12c0 .4 0 .9.1 1.3l-2 1.5 2 3.4 2.3-.9c.7.6 1.4 1 2.2 1.3L10 21h4l.4-2.4c.8-.3 1.5-.7 2.2-1.3l2.3.9 2-3.4-2-1.5c.1-.4.1-.9.1-1.3z"/></svg>Ajustes</button>
+</nav>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script>
+(function(){
+'use strict';
+
+var API='https://db.ygoprodeck.com/api/v7/';
+var STORAGE='escaner-cartas-v1';
+var STORE_KEYS=['tcgplayer','cardmarket','ebay','coolstuffinc'];
+var STORE_LABELS={tcgplayer:'TCGplayer',cardmarket:'Cardmarket',ebay:'eBay',coolstuffinc:'CoolStuffInc',amazon:'Amazon'};
+var LANGS=['EN','SP','FR','DE','IT','PT','JP','KR','AE'];
+var CODE_WL='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-';
+var NAME_WL="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 -'.,:!&";
+var BANDS=[[0.60,0.84],[0.52,0.78],[0.68,0.92],[0,1]];
+/* [invertir, umbral adaptativo, ignorar zonas] */
+var VARIANTS=[[0,0,1],[0,0,0],[1,0,1],[0,1,1],[1,0,0],[0,1,0],[1,1,1],[1,1,0]];
+var BANDS_NEAR=[[0.5,1],[0.25,0.75],[0,1],[0.7,1],[0.35,0.85]];
+var NAME_NEAR=[[0,0.16],[0.08,0.24],[0.16,0.32],[0.04,0.20],[0.24,0.40],[0.12,0.28]];
+
+// <pure>
+function fixDigits(t){return t.replace(/O/g,'0').replace(/[IL]/g,'1').replace(/S/g,'5').replace(/B/g,'8').replace(/Z/g,'2').replace(/G/g,'6')}
+function candidateCodes(token){
+  var t=String(token||'').toUpperCase().replace(/[^A-Z0-9-]/g,'');
+  var out=[], seen={};
+  function push(c){if(!seen[c]){seen[c]=1;out.push(c)}}
+  var pre,suf,m=t.match(/([A-Z0-9]{2,6})-([A-Z0-9]{3,6})/);
+  if(m){pre=m[1];suf=m[2]}
+  else{
+    var m2=t.match(/^([A-Z0-9]{2,6}?)(EN|SP|FR|DE|IT|PT|JP|KR|AE)([0-9OILSBZ]{3})$/);
+    var m3=t.match(/^([A-Z][A-Z0-9]{1,5}?)([0-9OILSBZ]{3})$/);
+    if(m2){pre=m2[1];suf=m2[2]+m2[3]}
+    else if(m3){pre=m3[1];suf=m3[2]}
+    else return out;
+  }
+  if(!/[0-9]/.test(suf))return out;
+  var preVars=[pre]; if(/0/.test(pre))preVars.push(pre.replace(/0/g,'O'));
+  var last3=suf.slice(-3), head=suf.slice(0,-3);
+  var tails=[last3], fixed=fixDigits(last3); if(fixed!==last3)tails.push(fixed);
+  preVars.forEach(function(p){
+    tails.forEach(function(tl){
+      if(head.length===0){push(p+'-'+tl);push(p+'-EN'+tl)}
+      else{push(p+'-EN'+tl);push(p+'-'+head+tl)}
+    });
+  });
+  return out.slice(0,8);
+}
+function detectLang(token){
+  var m=String(token||'').toUpperCase().match(/-?(EN|SP|FR|DE|IT|PT|JP|KR|AE)[A-Z0-9]{3}$/);
+  return m&&LANGS.indexOf(m[1])>-1?m[1]:'EN';
+}
+function looksLikeCode(s){
+  return /^[A-Z0-9]{2,6}-?[A-Z]{0,3}[0-9OILSBZ]{2,3}$/.test(String(s||'').toUpperCase().replace(/\s+/g,''));
+}
+function lineTokens(text){
+  var out=[];
+  String(text||'').toUpperCase().split(/\n/).forEach(function(line){
+    var c=line.replace(/[^A-Z0-9\- ]/g,'').replace(/\s*-\s*/g,'-');
+    var compact=c.replace(/ /g,''), re=/[A-Z0-9]{2,6}-?(?:EN|SP|FR|DE|IT|PT|JP|KR|AE)?[A-Z]?[0-9OILSBZ]{3}/g, m;
+    while((m=re.exec(compact))!==null){out.push(m[0]);if(m.index===re.lastIndex)re.lastIndex++}
+  });
+  return out;
+}
+/* bloque de texto denso (cuadro de efecto): casco de las palabras de solo letras con buena confianza */
+function denseHull(words){
+  var al=(words||[]).filter(function(w){
+    var l=String(w.text||'').replace(/[^A-Za-z]/g,'');
+    return w.bbox&&l.length>=3&&!/[0-9]/.test(w.text)&&(w.confidence||0)>=50;
+  });
+  if(al.length<8)return null;
+  var h={x0:1e9,y0:1e9,x1:-1,y1:-1};
+  al.forEach(function(w){h.x0=Math.min(h.x0,w.bbox.x0);h.y0=Math.min(h.y0,w.bbox.y0);h.x1=Math.max(h.x1,w.bbox.x1);h.y1=Math.max(h.y1,w.bbox.y1)});
+  return h;
+}
+function isNoiseToken(t){return /^(ATK|DEF|LV|LEVEL|RANK)/.test(t)}
+var TYPE_END=/\b(effect|normal|tuner|fusion|synchro|xyz|ritual|pendulum|flip|spirit|toon|union|gemini)$/i;
+function isTypeLine(raw){return TYPE_END.test(String(raw||'').trim())&&String(raw).trim().split(/\s+/).length<=4&&/\b(warrior|spellcaster|dragon|zombie|fiend|machine|aqua|pyro|rock|plant|insect|beast|fairy|dinosaur|reptile|fish|sea serpent|thunder|psychic|wyrm|cyberse|divine|illusion|winged|beast-warrior|rock)\b/i.test(raw)}
+function extractTokens(data){
+  var res=[], seen={}, hull=denseHull(data&&data.words);
+  function add(t,conf,bbox){
+    t=String(t||'').toUpperCase().replace(/[^A-Z0-9-]/g,'');
+    if(t.length<6||seen[t]||isNoiseToken(t)||!candidateCodes(t).length)return;
+    if(hull&&bbox&&(conf||0)<85){
+      var cx=(bbox.x0+bbox.x1)/2, cy=(bbox.y0+bbox.y1)/2;
+      if(cx>=hull.x0&&cx<=hull.x1&&cy>=hull.y0&&cy<=hull.y1)return;
+    }
+    seen[t]=1;res.push({token:t,conf:conf||0});
+  }
+  ((data&&data.words)||[]).forEach(function(w){add(w.text,w.confidence,w.bbox)});
+  if(data&&data.text)lineTokens(data.text).forEach(function(t){add(t,(data.confidence||0)-10)});
+  return res.sort(function(a,b){return b.conf-a.conf});
+}
+function snapCandidates(cands,known){
+  if(!known||!known.list||!known.list.length)return cands;
+  var exact=[],snap=[],rest=[],seen={};
+  function put(arr,c){if(!seen[c]){seen[c]=1;arr.push(c)}}
+  cands.forEach(function(c){
+    var i=c.indexOf('-'); if(i<0){put(rest,c);return}
+    var pre=c.slice(0,i), tail=c.slice(i);
+    if(known.map[pre]){put(exact,c);return}
+    var n=0;
+    for(var k=0;k<known.list.length&&n<3;k++){
+      var kp=known.list[k];
+      if(Math.abs(kp.length-pre.length)>1)continue;
+      if(lev(pre,kp)<=1){put(snap,kp+tail);n++}
+    }
+    put(rest,c);
+  });
+  return exact.concat(snap,rest);
+}
+function lev(a,b){
+  var m=a.length,n=b.length,i,j;
+  if(!m)return n; if(!n)return m;
+  var prev=[],cur=[];
+  for(j=0;j<=n;j++)prev[j]=j;
+  for(i=1;i<=m;i++){
+    cur[0]=i;
+    for(j=1;j<=n;j++){
+      var c=a.charCodeAt(i-1)===b.charCodeAt(j-1)?0:1;
+      cur[j]=Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+c);
+    }
+    var t=prev;prev=cur;cur=t;
+  }
+  return prev[n];
+}
+function normName(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,' ').trim()}
+function sim(a,b){
+  a=normName(a);b=normName(b);
+  if(!a||!b)return 0;
+  return 1-lev(a,b)/Math.max(a.length,b.length);
+}
+function cleanName(raw){
+  return String(raw||'').replace(/[\r\n]+/g,' ').replace(/[^A-Za-z0-9 \-'.,:!&]/g,' ').replace(/\s+/g,' ').replace(/^[^A-Za-z0-9]+/,'').replace(/[^A-Za-z0-9!.]+$/,'').trim();
+}
+function semiLev(pat,text){
+  /* ediciones mínimas para encontrar TODO pat dentro de cualquier tramo de text */
+  var m=pat.length,n=text.length,i,j,prev=[],cur=[];
+  if(!m)return 0;
+  for(j=0;j<=n;j++)prev[j]=0;
+  for(i=1;i<=m;i++){
+    cur[0]=i;
+    for(j=1;j<=n;j++){
+      var c=pat.charCodeAt(i-1)===text.charCodeAt(j-1)?0:1;
+      cur[j]=Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+c);
+    }
+    var t=prev;prev=cur;cur=t;
+  }
+  var best=prev[0]; for(j=1;j<=n;j++)if(prev[j]<best)best=prev[j];
+  return best;
+}
+function nameScore(raw,name){
+  var a=normName(raw), b=normName(name);
+  if(!a||!b)return 0;
+  var full=1-lev(a,b)/Math.max(a.length,b.length);
+  /* el nombre aparece dentro de una lectura con ruido (icono de atributo, estrellas…) */
+  var noise=Math.max(0,a.length-b.length);
+  var contain=(1-semiLev(b,a)/b.length)*(1-Math.min(0.15,Math.max(0,noise-3)*0.01));
+  /* lectura cortada: lo leído es el inicio o un tramo del nombre */
+  var cov=Math.min(1,a.length/b.length);
+  var trunc=a.length>=6?(1-semiLev(a,b)/a.length)*Math.sqrt(cov)*0.95:0;
+  return Math.max(full,contain,trunc);
+}
+function nameQueries(raw){
+  var t=cleanName(raw), out=[];
+  if(t.length<4)return out;
+  var ws=t.split(' ').filter(function(w){return w.replace(/[^A-Za-z0-9]/g,'').length>=3});
+  var n=ws.length;
+  if(t.length<=24)out.push(t);
+  if(n>=2){
+    out.push(ws[0]+' '+ws[1]);
+    if(n>=3)out.push(ws[n-2]+' '+ws[n-1]);
+  }
+  var long=ws.filter(function(w){return w.replace(/[^A-Za-z0-9]/g,'').length>=4}).sort(function(a,b){return b.length-a.length});
+  long.slice(0,2).forEach(function(w){out.push(w)});
+  if(!out.length)out.push(t);
+  return out.filter(function(v,i,a){return a.indexOf(v)===i}).slice(0,5);
+}
+function num(v){var n=parseFloat(v);return isFinite(n)&&n>0?n:0}
+function storeAvg(stores){
+  var v=STORE_KEYS.map(function(k){return stores&&stores[k]}).filter(function(n){return n>0});
+  return v.length?v.reduce(function(a,b){return a+b},0)/v.length:0;
+}
+function itemValue(it,basis){
+  var a=it.printPrice>0?it.printPrice:0, b=storeAvg(it.stores);
+  var t=it.stores&&it.stores.tcgplayer>0?it.stores.tcgplayer:0;
+  if(basis==='tcg')return t||a||b;
+  return basis==='stores'?(b||a):(a||b);
+}
+function csvCell(v){
+  var s=v==null?'':String(v);
+  if(/^[=+\-@]/.test(s))s="'"+s;
+  return /[",\n;]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;
+}
+function langEs(l){return {EN:'Inglés',SP:'Español',FR:'Francés',DE:'Alemán',IT:'Italiano',PT:'Portugués',JP:'Japonés',KR:'Coreano',AE:'Inglés (Asia)'}[String(l||'EN').toUpperCase()]||'Otro'}
+var DEF_COND='Near Mint (NM)';
+var RAR_ABBR={'Common':'C','Rare':'R','Super Rare':'SR','Ultra Rare':'UR','Secret Rare':'ScR','Ultimate Rare':'UtR','Ghost Rare':'GR','Starlight Rare':'StR',"Collector's Rare":'CR','Prismatic Secret Rare':'PScR','Quarter Century Secret Rare':'QCScR','Gold Rare':'GldR','Short Print':'SP','Platinum Secret Rare':'PlScR','Premium Gold Rare':'PGR','N/A':'NA'};
+var COND_ABBR={'Sellado':'SEL','Near Mint (NM)':'NM','Lightly Played (LP)':'LP','Moderately Played (MP)':'MP','Heavily Played (HP)':'HP','Damaged (DMG)':'DMG'};
+function condAbbr(c){c=String(c||DEF_COND);return COND_ABBR[c]||(c.replace(/[^A-Za-z0-9]/g,'').slice(0,4).toUpperCase()||'NM')}
+function rarAbbr(r){
+  r=String(r||'');
+  if(RAR_ABBR[r])return RAR_ABBR[r];
+  var w=r.replace(/[^A-Za-z0-9 ]/g,'').split(/\s+/).filter(Boolean);
+  return w.length?w.map(function(x){return x[0].toUpperCase()}).join(''):'NA';
+}
+function skuOf(it){
+  var base=it.setCode||(it.cardId?('ID'+it.cardId):('P-'+String(it.name||'').normalize('NFD').replace(/[^A-Za-z0-9]/g,'').toUpperCase().slice(0,12)));
+  return base+'-'+rarAbbr(it.rarity)+'-'+condAbbr(it.cond);
+}
+function estadoOf(stock,min){
+  if(stock<0)return 'Revisar';
+  if(stock===0)return 'Agotado';
+  if(stock<=(min||0))return 'Reordenar';
+  return 'OK';
+}
+// </pure>
+
+/* ---------- estado ---------- */
+var $=function(id){return document.getElementById(id)};
+var video=$('video'), guide=$('guide'), tag=$('tag'), statusEl=$('status'), dbgEl=$('dbg');
+var items=[], sales=[], purchases=[], expenses=[], cats={};
+var prefs={fx:0,fxAuto:null,pricesTs:0,basis:'tcg',lastRarity:{},dist:'near',confirmAll:false,lastCond:'Near Mint (NM)'};
+var DEFAULT_CATS={
+  tipo:['Carta suelta','Sobre','Caja de sobres','Structure Deck','Tin / Colección','Fundas y accesorios','Playmat / Binder','Otro'],
+  rareza:['Common','Rare','Super Rare','Ultra Rare','Secret Rare','Ultimate Rare','Ghost Rare','Starlight Rare',"Collector's Rare",'Prismatic Secret Rare','Quarter Century Secret Rare','Gold Rare','Short Print','N/A'],
+  cond:['Sellado','Near Mint (NM)','Lightly Played (LP)','Moderately Played (MP)','Heavily Played (HP)','Damaged (DMG)'],
+  idioma:['Español','Inglés','Japonés','Otro'],
+  pago:['Efectivo','Transferencia','Tarjeta','Otro'],
+  gasto:['Renta','Luz / Agua / Internet','Sueldos','Publicidad','Torneos y premios','Empaque y material','Mantenimiento','Comisiones','Impuestos','Otro']
+};
+var CAT_LABELS={tipo:'Tipo de producto',rareza:'Rareza',cond:'Condición',idioma:'Idioma',pago:'Método de pago',gasto:'Categoría de gasto'};
+var openRows={}, invFilter='', invState='all', invLimit=60, _sm=null;
+
+var AUTO=0.88, SUGGEST=0.85;
+var rejected={}, rejSig=null, rejChange=0, weak=0, shownIds=[];
+var stream=null, worker=null, curMode=null, running=false, state='idle', votes=[], nameVotes=[], failTicks=0, lockSig=null, changeCount=0;
+var setCache=new Map(), cardCache=new Map(), nameCache=new Map(), audioCtx=null, tagTimer=null;
+var lastCodeRaw='', lastNameRaw='';
+var work=document.createElement('canvas'), sigCv=document.createElement('canvas'), zoomCv=document.createElement('canvas'), thumbCv=document.createElement('canvas');
+var known={map:{},list:[]}, sharpMax=0, blurSkips=0;
+sigCv.width=24; sigCv.height=34;
+
+function h(tagName,props){
+  var e=document.createElement(tagName), p=props||{};
+  Object.keys(p).forEach(function(k){
+    var v=p[k];
+    if(k==='class')e.className=v;
+    else if(k==='text')e.textContent=v;
+    else if(k.indexOf('on')===0)e.addEventListener(k.slice(2),v);
+    else if(v===true)e.setAttribute(k,'');
+    else if(v!==false&&v!=null)e.setAttribute(k,v);
+  });
+  for(var i=2;i<arguments.length;i++){
+    [].concat(arguments[i]).forEach(function(c){if(c==null||c===false)return;e.append(c.nodeType?c:document.createTextNode(String(c)))});
+  }
+  return e;
+}
+function moneyMx(n){return '$'+Number(n).toLocaleString('es-MX',{minimumFractionDigits:0,maximumFractionDigits:0})+' MXN'}
+function effFx(){return prefs.fx>0?prefs.fx:(prefs.fxAuto&&prefs.fxAuto.rate>0?prefs.fxAuto.rate:0)}
+function fxText(){
+  if(prefs.fx>0)return 'Tipo de cambio manual: '+prefs.fx+' (toca «Auto» para usar el del día)';
+  var a=prefs.fxAuto; if(!a||!(a.rate>0))return 'Sin tipo de cambio todavía (necesita internet).';
+  return 'Tipo de cambio automático: '+a.rate.toFixed(2)+' al '+a.date+' ('+a.src+')';
+}
+function fetchFx(force){
+  var a=prefs.fxAuto;
+  if(!force&&a&&a.rate>0&&Date.now()-a.ts<6*3600e3)return Promise.resolve();
+  function save1(rate,date,src){
+    if(!(rate>0))throw new Error('sin tasa');
+    prefs.fxAuto={rate:rate,date:date||new Date().toISOString().slice(0,10),src:src,ts:Date.now()}; save(); render();
+  }
+  return fetch('https://api.frankfurter.dev/v1/latest?base=USD&symbols=MXN').then(function(r){if(!r.ok)throw new Error('http');return r.json()})
+    .then(function(j){save1(j&&j.rates&&j.rates.MXN,j&&j.date,'Frankfurter / BCE')})
+    .catch(function(){
+      return fetch('https://open.er-api.com/v6/latest/USD').then(function(r){if(!r.ok)throw new Error('http');return r.json()})
+        .then(function(j){save1(j&&j.rates&&j.rates.MXN,j&&j.time_last_update_utc?new Date(j.time_last_update_utc).toISOString().slice(0,10):'','ExchangeRate-API')});
+    }).catch(function(){});
+}
+function tcgLink(it){return 'https://www.tcgplayer.com/search/yugioh/product?productLineName=yugioh&q='+encodeURIComponent(it.name+(it.setCode?' '+it.setCode:''))}
+function money(n){return '$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
+function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
+function setStatus(msg,isErr){statusEl.textContent=msg;statusEl.className='status'+(isErr?' err':'')}
+function setDbg(){dbgEl.textContent=(lastCodeRaw||lastNameRaw)?('leí → código: "'+lastCodeRaw.slice(0,60)+'" · nombre: "'+lastNameRaw.slice(0,60)+'"'):''}
+function setGuide(cls){guide.className='guide'+(prefs.dist==='near'?' near':'')+(cls?' '+cls:'')}
+function applyConf(){$('confBtn').textContent=prefs.confirmAll?'Confirmar: todas':'Confirmar: dudosas'}
+function applyDist(){$('stage').classList.toggle('near',prefs.dist==='near');$('distBtn').textContent=prefs.dist==='near'?'Distancia: cerca':'Distancia: lejos';setGuide('')}
+function showTag(nodes,ok,keepMs){
+  tag.replaceChildren(); nodes.forEach(function(n){tag.append(n)});
+  tag.className='tag on'+(ok?' ok':'');
+  clearTimeout(tagTimer); if(keepMs)tagTimer=setTimeout(function(){tag.className='tag'},keepMs);
+}
+function hideTag(){clearTimeout(tagTimer);tag.className='tag'}
+function errText(e){
+  var m=String(e&&e.message||e||'');
+  return /fetch|network|http|load failed/i.test(m)?'Sin conexión con la base de cartas. Reintentando…':'Error al leer: '+m;
+}
+
+function beep(){
+  try{
+    audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();
+    var o=audioCtx.createOscillator(), g=audioCtx.createGain();
+    o.frequency.value=880; g.gain.value=0.08; o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime+0.09);
+  }catch(e){}
+  try{if(navigator.vibrate)navigator.vibrate(60)}catch(e){}
+}
+
+/* ---------- guardado (IndexedDB, con respaldo en localStorage) ---------- */
+var DBKEY='db', LS_KEY='tienda-ygo-v1', saveTimer=null;
+function idbOpen(){
+  return new Promise(function(res,rej){
+    if(!window.indexedDB)return rej(new Error('sin IndexedDB'));
+    var r=indexedDB.open('tienda-ygo',1);
+    r.onupgradeneeded=function(){r.result.createObjectStore('kv')};
+    r.onsuccess=function(){res(r.result)}; r.onerror=function(){rej(r.error)};
+  });
+}
+function idbGet(k){return idbOpen().then(function(d){return new Promise(function(res,rej){var q=d.transaction('kv').objectStore('kv').get(k);q.onsuccess=function(){res(q.result)};q.onerror=function(){rej(q.error)}})})}
+function idbSet(k,v){return idbOpen().then(function(d){return new Promise(function(res,rej){var t=d.transaction('kv','readwrite');t.objectStore('kv').put(v,k);t.oncomplete=function(){res()};t.onerror=function(){rej(t.error)};t.onabort=function(){rej(t.error)}})})}
+function clone(o){return JSON.parse(JSON.stringify(o))}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,8)}
+function snapshot(){return {v:1,savedAt:Date.now(),items:items,sales:sales,purchases:purchases,expenses:expenses,prefs:prefs,cats:cats}}
+function persist(){
+  clearTimeout(saveTimer); saveTimer=null;
+  var snap=snapshot();
+  return idbSet(DBKEY,snap).catch(function(){
+    try{localStorage.setItem(LS_KEY,JSON.stringify(snap))}catch(e){toast('No se pudo guardar en este dispositivo. Descarga un respaldo en Ajustes.')}
+  });
+}
+function save(){_sm=null;clearTimeout(saveTimer);saveTimer=setTimeout(persist,150)}
+function applySnap(s){
+  items=s.items||[]; sales=s.sales||[]; purchases=s.purchases||[]; expenses=s.expenses||[];
+  prefs=Object.assign(prefs,s.prefs||{}); cats=Object.assign({},clone(DEFAULT_CATS),s.cats||{});
+}
+function normalize(){
+  if(!prefs.v11){prefs.v11=1;prefs.basis='tcg'}
+  Object.keys(DEFAULT_CATS).forEach(function(k){if(!Array.isArray(cats[k])||!cats[k].length)cats[k]=clone(DEFAULT_CATS[k])});
+  items.forEach(function(it){
+    if(!it.id)it.id=uid();
+    if(!it.cond)it.cond=prefs.lastCond||DEF_COND;
+    if(it.cost===undefined)it.cost=null;
+    if(it.priceMx===undefined)it.priceMx=null;
+    if(it.minStock===undefined)it.minStock=0;
+    if(it.notes===undefined)it.notes='';
+    if(!it.type)it.type='Carta suelta';
+    if(!(it.qty>=0))it.qty=0;
+    (it.options||[]).forEach(function(o){if(!o.code)o.code=it.setCode});
+  });
+  _sm=null;
+}
+function load(){
+  var migrated=false;
+  return idbGet(DBKEY).catch(function(){return null}).then(function(s){
+    if(!s){try{var t=localStorage.getItem(LS_KEY);if(t)s=JSON.parse(t)}catch(e){}}
+    if(s){applySnap(s);return}
+    try{
+      var old=JSON.parse(localStorage.getItem(STORAGE)||'null');   // inventario del escáner anterior
+      if(old){items=old.items||[];prefs=Object.assign(prefs,old.prefs||{});migrated=true}
+    }catch(e){}
+    cats=clone(DEFAULT_CATS);
+  }).then(function(){normalize();return migrated});
+}
+function wipeAll(){items=[];sales=[];purchases=[];expenses=[];cats=clone(DEFAULT_CATS);_sm=null;return persist()}
+
+/* ---------- base de cartas (YGOPRODeck) ---------- */
+function lookupSet(code){
+  if(setCache.has(code))return Promise.resolve(setCache.get(code));
+  return fetch(API+'cardsetsinfo.php?setcode='+encodeURIComponent(code)).then(function(r){
+    if(r.status>=500)throw new Error('http '+r.status);
+    return r.json().catch(function(){return null});
+  }).then(function(j){
+    var v=(j&&!j.error&&j.name&&j.id)?j:null;
+    setCache.set(code,v); return v;
+  });
+}
+function setKnown(list){
+  var m={},l=[];
+  list.forEach(function(c){c=String(c||'').toUpperCase();if(c&&!m[c]){m[c]=1;l.push(c)}});
+  known={map:m,list:l};
+}
+function loadPrefixes(){
+  var KEY='escaner-sets-v1';
+  try{
+    var c=JSON.parse(localStorage.getItem(KEY)||'null');
+    if(c&&c.list&&c.list.length){setKnown(c.list);if(Date.now()-c.t<30*864e5)return}
+  }catch(e){}
+  fetch(API+'cardsets.php').then(function(r){if(!r.ok)throw new Error('http');return r.json()}).then(function(j){
+    if(!Array.isArray(j))return;
+    var seen={},list=[];
+    j.forEach(function(x){var c=x&&x.set_code&&String(x.set_code).toUpperCase();if(c&&!seen[c]){seen[c]=1;list.push(c)}});
+    if(list.length<50)return;
+    setKnown(list);
+    try{localStorage.setItem(KEY,JSON.stringify({t:Date.now(),list:list}))}catch(e){}
+  }).catch(function(){});
+}
+function loadCard(id){
+  if(cardCache.has(id))return Promise.resolve(cardCache.get(id));
+  return fetch(API+'cardinfo.php?id='+encodeURIComponent(id)).then(function(r){
+    if(!r.ok)throw new Error('http '+r.status);
+    return r.json();
+  }).then(function(j){
+    var c=j&&j.data&&j.data[0]; if(!c)throw new Error('sin datos');
+    cardCache.set(id,c); return c;
+  });
+}
+function searchNames(q){
+  var key=q.toLowerCase();
+  if(nameCache.has(key))return Promise.resolve(nameCache.get(key));
+  return fetch(API+'cardinfo.php?fname='+encodeURIComponent(q)+'&num=30&offset=0').then(function(r){
+    if(r.status>=500)throw new Error('http '+r.status);
+    if(!r.ok)return [];
+    return r.json().then(function(j){return (j&&j.data)||[]},function(){return []});
+  }).then(function(list){
+    nameCache.set(key,list);
+    list.forEach(function(c){cardCache.set(c.id,c)});
+    return list;
+  });
+}
+function storesFrom(card){
+  var p=(card.card_prices&&card.card_prices[0])||{};
+  return {tcgplayer:num(p.tcgplayer_price),cardmarket:num(p.cardmarket_price),ebay:num(p.ebay_price),amazon:num(p.amazon_price),coolstuffinc:num(p.coolstuffinc_price)};
+}
+function thumbOf(card){var i=card.card_images&&card.card_images[0];return i?(i.image_url_small||i.image_url_cropped||i.image_url):''}
+function buildFromCode(info,lang){
+  return loadCard(info.id).then(function(card){
+    var code=info.set_code;
+    var opts=(card.card_sets||[]).filter(function(s){return s.set_code===code}).map(function(s){return {code:code,rarity:s.set_rarity,price:num(s.set_price),setName:s.set_name}});
+    if(!opts.length)opts=[{code:code,rarity:info.set_rarity,price:num(info.set_price),setName:info.set_name}];
+    var rar=prefs.lastRarity[code], pick=opts.filter(function(o){return o.rarity===rar})[0]||opts.filter(function(o){return o.rarity===info.set_rarity})[0]||opts[0];
+    return {cardId:info.id,name:card.name,setCode:code,setName:pick.setName,rarity:pick.rarity,options:opts,needsPrint:false,lang:lang||'EN',printPrice:pick.price,stores:storesFrom(card)};
+  });
+}
+function baseFromCard(card){
+  var opts=(card.card_sets||[]).map(function(s){return {code:s.set_code,rarity:s.set_rarity,price:num(s.set_price),setName:s.set_name}});
+  opts.sort(function(a,b){return String(a.code).localeCompare(String(b.code))});
+  return {cardId:card.id,name:card.name,setCode:'',setName:'',rarity:'',options:opts,needsPrint:opts.length>0,lang:'EN',printPrice:0,stores:storesFrom(card)};
+}
+
+/* ---------- inventario ---------- */
+function keyOf(it){return (it.setCode||('#'+it.cardId))+'|'+it.rarity+'|'+(it.cond||DEF_COND)}
+function addItem(base){
+  var probe=Object.assign({},base,{cond:prefs.lastCond||DEF_COND});
+  var found=items.filter(function(i){return !i.manual&&keyOf(i)===keyOf(probe)})[0];
+  if(found){found.qty++;found.ts=Date.now();found.stores=base.stores;if(!found.needsPrint)found.printPrice=base.printPrice;save();render();return found}
+  var it=Object.assign({id:uid(),qty:1,ts:Date.now(),cond:prefs.lastCond||DEF_COND,cost:null,priceMx:null,minStock:0,notes:'',type:'Carta suelta'},base);
+  items.push(it); save(); render(); return it;
+}
+function applyOption(it,idx){
+  var o=it.options[idx]; if(!o)return;
+  prefs.lastRarity[o.code]=o.rarity;
+  var other=items.filter(function(i){return i!==it&&i.setCode===o.code&&i.rarity===o.rarity&&(i.cond||DEF_COND)===(it.cond||DEF_COND)})[0];
+  if(other){
+    other.qty+=it.qty;other.ts=Date.now();
+    sales.forEach(function(s){if(s.pid===it.id)s.pid=other.id});
+    purchases.forEach(function(p){if(p.pid===it.id)p.pid=other.id});
+    items=items.filter(function(i){return i!==it});
+  }else{it.setCode=o.code;it.rarity=o.rarity;it.printPrice=o.price;it.setName=o.setName;it.needsPrint=false;it.options=it.options.filter(function(x){return x.code===o.code})}
+  save();render();
+}
+
+/* ---------- existencias y precios ---------- */
+function stockMap(){
+  if(_sm)return _sm;
+  var m={};
+  purchases.forEach(function(p){(m[p.pid]=m[p.pid]||{i:0,o:0}).i+=p.qty});
+  sales.forEach(function(s){(m[s.pid]=m[s.pid]||{i:0,o:0}).o+=s.qty});
+  return (_sm=m);
+}
+function movesOf(it){return stockMap()[it.id]||{i:0,o:0}}
+function stockOf(it){var m=movesOf(it);return (it.qty||0)+m.i-m.o}
+function fxRate(){return effFx()}
+function priceMx(it){
+  if(it.priceMx>0)return it.priceMx;
+  var v=itemValue(it,prefs.basis), f=effFx();
+  return (v>0&&f>0)?Math.round(v*f):0;
+}
+function fmt(n){n=Number(n||0);return (n<0?'-':'')+'$'+Math.abs(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2})}
+function badgeFor(st){
+  return {OK:['ok','OK'],Reordenar:['re','Reordenar'],Agotado:['ag','Agotado'],Revisar:['rv','Revisar']}[st];
+}
+function totals(){
+  var q=0,v=0,unpriced=0,pend=0;
+  items.forEach(function(i){var s=Math.max(0,stockOf(i));q+=s;var x=itemValue(i,prefs.basis);if(x>0)v+=x*s;else if(!i.manual)unpriced++;if(i.needsPrint)pend++});
+  return {qty:q,unique:items.length,value:v,unpriced:unpriced,pending:pend};
+}
+function optLabel(it,o){
+  if(it.needsPrint)return o.code+' · '+(o.setName||'')+' · '+o.rarity+(o.price?' · '+money(o.price):'');
+  return o.rarity+(o.price?' · '+money(o.price):'');
+}
+function numOrNull(v){var n=parseFloat(String(v).replace(',','.'));return isFinite(n)&&n>=0?n:null}
+function matchesFilter(it){
+  var q=invFilter.trim().toLowerCase();
+  if(q&&(it.name+' '+(it.setCode||'')+' '+skuOf(it)).toLowerCase().indexOf(q)<0)return false;
+  var st=stockOf(it);
+  if(invState==='low')return st>0&&st<=(it.minStock||0);
+  if(invState==='out')return st<=0;
+  if(invState==='pend')return !!it.needsPrint;
+  return true;
+}
+function detailsFor(it){
+  var d=h('details',{class:'more',ontoggle:function(e){
+    if(e.target.open){openRows[it.id]=1;if(!e.target.dataset.built){e.target.dataset.built='1';fillDetails(e.target,it)}}
+    else delete openRows[it.id];
+  }},h('summary',{text:'Detalles · '+(it.cond||DEF_COND)+' · SKU '+skuOf(it)}));
+  if(openRows[it.id]){d.open=true;d.dataset.built='1';fillDetails(d,it)}
+  return d;
+}
+function fillDetails(d,it){
+  function opts(sel,list,cur){var l=list.slice();if(cur&&l.indexOf(cur)<0)l.unshift(cur);l.forEach(function(c){sel.append(h('option',{value:c,selected:c===cur,text:c}))});return sel}
+  function field(label,input){return h('label',{class:'fld'},h('span',{text:label}),input)}
+  var cond=opts(h('select',{class:'sel sm','aria-label':'Condición de '+it.name,onchange:function(e){it.cond=e.target.value;prefs.lastCond=it.cond;save();render()}}),cats.cond,it.cond||DEF_COND);
+  var tipo=opts(h('select',{class:'sel sm','aria-label':'Tipo de '+it.name,onchange:function(e){it.type=e.target.value;save()}}),cats.tipo,it.type||'Carta suelta');
+  var cost=h('input',{class:'txt sm',type:'number',inputmode:'decimal',min:'0',step:'0.01',placeholder:'0.00','aria-label':'Costo unitario',value:it.cost!=null?it.cost:'',onchange:function(e){it.cost=numOrNull(e.target.value);save();render()}});
+  var pr=h('input',{class:'txt sm',type:'number',inputmode:'decimal',min:'0',step:'0.01',placeholder:priceMx(it)?String(priceMx(it))+' (auto)':'auto','aria-label':'Precio de venta',value:it.priceMx>0?it.priceMx:'',onchange:function(e){it.priceMx=numOrNull(e.target.value);save();render()}});
+  var mn=h('input',{class:'txt sm',type:'number',inputmode:'numeric',min:'0',step:'1',placeholder:'0','aria-label':'Stock mínimo',value:it.minStock>0?it.minStock:'',onchange:function(e){it.minStock=parseInt(e.target.value,10)||0;save();render()}});
+  var nt=h('input',{class:'txt sm',type:'text',placeholder:'Notas','aria-label':'Notas',value:it.notes||'',onchange:function(e){it.notes=e.target.value;save()}});
+  var m=movesOf(it);
+  d.append(h('div',{class:'form'},
+    field('Condición',cond),field('Tipo',tipo),field('Costo unitario (MXN)',cost),field('Precio de venta (MXN)',pr),field('Stock mínimo',mn),field('Notas',nt)),
+    h('div',{class:'note',style:'margin-top:6px',text:'Stock: '+(it.qty||0)+' inicial + '+m.i+' compras − '+m.o+' ventas = '+stockOf(it)}));
+}
+function rowFor(it){
+  var stock=stockOf(it), v=itemValue(it,prefs.basis), opts=it.options||[], rar;
+  if(it.needsPrint){
+    rar=h('select',{class:'rsel','aria-label':'Impresión de '+it.name,onchange:function(e){if(e.target.value!=='')applyOption(it,parseInt(e.target.value,10))}});
+    rar.append(h('option',{value:'',selected:true,text:'Elige la impresión…'}));
+    opts.forEach(function(o,i){rar.append(h('option',{value:String(i),text:optLabel(it,o)}))});
+  }else if(opts.length>1){
+    rar=h('select',{class:'rsel','aria-label':'Rareza de '+it.name,onchange:function(e){applyOption(it,parseInt(e.target.value,10))}});
+    opts.forEach(function(o,i){rar.append(h('option',{value:String(i),selected:o.rarity===it.rarity,text:optLabel(it,o)}))});
+  }else rar=h('span',{class:'pill',text:it.rarity&&it.rarity!=='N/A'?it.rarity:(it.type||'Producto')});
+  var bd=badgeFor(estadoOf(stock,it.minStock));
+  var pm=priceMx(it), side=h('div',{class:'side'});
+  if(v>0&&stock>0)side.append(h('div',{class:'price'},money(v*stock),stock>1?h('small',{text:stock+' × '+money(v)}):null,effFx()>0?h('small',{text:'≈ '+moneyMx(v*stock*effFx())}):null));
+  else if(pm>0)side.append(h('div',{class:'price'},fmt(pm),h('small',{text:'precio de venta'})));
+  else side.append(h('div',{class:'price'},'sin precio'));
+  side.append(h('div',{class:'step'},
+    h('button',{type:'button','aria-label':'Quitar una pieza',text:'−',onclick:function(){if(stockOf(it)>0&&it.qty>0){it.qty--;save();render()}}}),
+    h('span',{text:stock}),
+    h('button',{type:'button','aria-label':'Agregar una pieza',text:'+',onclick:function(){it.qty++;save();render()}})));
+  side.append(h('button',{class:'rm',type:'button',text:'Quitar',onclick:function(){
+    var m=movesOf(it);
+    if((m.i||m.o)&&!window.confirm('Este producto tiene compras o ventas registradas (se conservan en sus listas). ¿Quitarlo del inventario?'))return;
+    items=items.filter(function(i){return i!==it});save();render();
+  }}));
+  var row=h('li',{class:'row'},
+    h('div',{style:'min-width:0'},h('div',{class:'nm',text:it.name}),
+      h('div',{class:'meta'},it.setCode?h('span',{class:'code',text:it.setCode}):null,rar,it.lang&&it.lang!=='EN'&&!it.manual?h('span',{text:'impresa en '+langEs(it.lang)}):null,h('span',{class:'badge '+bd[0],text:bd[1]}))),
+    side);
+  var parts=Object.keys(STORE_LABELS).filter(function(k){return it.stores&&it.stores[k]>0}).map(function(k){return STORE_LABELS[k]+' '+money(it.stores[k])});
+  var sa=storeAvg(it.stores);
+  if(it.printPrice>0||parts.length)row.append(h('div',{class:'breakdown',text:(it.printPrice>0?'Impresión '+money(it.printPrice):'Impresión s/d')+' · Promedio tiendas '+(sa?money(sa):'s/d')+(parts.length?' ('+parts.join(' · ')+')':'')}));
+  if(!it.manual)row.append(h('a',{class:'tcg',href:tcgLink(it),target:'_blank',rel:'noopener noreferrer',text:'Ver en TCGplayer ↗'}));
+  row.append(detailsFor(it));
+  return row;
+}
+var _rendering=false,_again=false;
+function render(){
+  if(_rendering){_again=true;return}
+  _rendering=true;
+  try{renderNow()}finally{_rendering=false}
+  if(_again){_again=false;render()}
+}
+function renderNow(){
+  var t=totals(), s=$('stats'); s.replaceChildren();
+  s.append(h('span',null,h('b',{text:t.qty}),' piezas'),h('span',null,h('b',{text:t.unique}),' productos'),
+    h('span',null,'valor ',h('b',{text:money(t.value)+' USD'}),effFx()>0?' ≈ '+moneyMx(t.value*effFx()):'',t.unpriced?' (+'+t.unpriced+' sin precio)':''));
+  if(t.pending)s.append(h('span',{text:t.pending+' por elegir impresión'}));
+  $('invTitle').textContent='Inventario'+(items.length?' · '+items.length:'');
+  $('basis').value=prefs.basis;
+  if(document.activeElement!==$('fx')){var ef=effFx();$('fx').value=ef>0?Number(ef.toFixed(4)):''}
+  $('fxInfo').textContent=fxText();
+  var top=$('topSub'); if(top)top.textContent=effFx()>0?'USD→MXN '+effFx().toFixed(2)+(navigator.onLine===false?' · sin conexión':''):(navigator.onLine===false?'sin conexión':'');
+  var list=$('list'); list.replaceChildren();
+  var all=items.slice().sort(function(a,b){return (b.ts||0)-(a.ts||0)}).filter(matchesFilter);
+  all.slice(0,invLimit).forEach(function(it){list.append(rowFor(it))});
+  $('moreBtn').hidden=all.length<=invLimit;
+  $('moreBtn').textContent='Mostrar más ('+(all.length-invLimit)+')';
+  $('empty').hidden=all.length>0;
+  $('empty').textContent=items.length?'Ningún producto coincide con el filtro.':'Aún no hay productos. Inicia la cámara y muestra la primera carta, o agrega un producto manual.';
+}
+
+/* ---------- CSV ---------- */
+function downloadCsv(name,head,rows){
+  var lines=[head.join(',')].concat(rows.map(function(r){return r.map(csvCell).join(',')}));
+  var blob=new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8'});
+  var d=new Date(), p=function(n){return String(n).padStart(2,'0')};
+  var a=h('a',{href:URL.createObjectURL(blob),download:name+'-'+d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'.csv'});
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(function(){URL.revokeObjectURL(a.href)},4000);
+}
+function pctText(cost,price){return price>0&&cost!=null?(((price-cost)/price)*100).toFixed(1)+'%':''}
+function exportCsv(){
+  if(!items.length)return;
+  /* Mismas 19 columnas y orden que la hoja «Inventario» del archivo de administración; después, datos extra del escáner. */
+  var head=['SKU','Producto / Carta','Tipo','Set / Código','Rareza','Condición','Idioma','Stock inicial','Entradas (compras)','Salidas (ventas)','Stock actual','Stock mínimo','Costo unitario','Precio de venta','Valor a costo','Valor a precio venta','Margen %','Estado','Notas',
+    'Nombre del set','Precio TCGplayer promedio (USD)','Total TCGplayer (USD)','Impresión confirmada','ID de carta','Tipo de cambio USD→MXN','Fecha del tipo de cambio'];
+  var fx=effFx(), fxDate=prefs.fx>0?'manual':(prefs.fxAuto?prefs.fxAuto.date:''), seen={};
+  var rows=items.slice().sort(function(a,b){return a.name.localeCompare(b.name)}).map(function(i){
+    var t=i.stores&&i.stores.tcgplayer>0?i.stores.tcgplayer:0, m=movesOf(i), st=stockOf(i), pm=priceMx(i), sku=skuOf(i);
+    if(seen[sku]){seen[sku]++;sku=sku+'-'+seen[sku]}else seen[sku]=1;
+    return [sku,i.name,i.type||'Carta suelta',i.setCode,(i.rarity&&i.rarity!=='N/A')||!i.manual?i.rarity:'N/A',i.cond||DEF_COND,langEs(i.lang),i.qty||0,m.i,m.o,st,i.minStock||0,
+      i.cost!=null?i.cost:'',pm||'',i.cost!=null?(st*i.cost).toFixed(2):'',pm?(st*pm).toFixed(2):'',pm&&i.cost!=null?pctText(i.cost,pm):'',estadoOf(st,i.minStock),i.notes||'',
+      i.setName||'',t?t.toFixed(2):'',t?(t*Math.max(0,st)).toFixed(2):'',i.manual?'':(i.needsPrint?'no':'si'),i.cardId||'',fx?Number(fx.toFixed(4)):'',fxDate];
+  });
+  downloadCsv('inventario',head,rows);
+}
+
+function refreshPrices(){
+  if(!items.length)return;
+  var ids=Array.from(new Set(items.map(function(i){return i.cardId})));
+  var btn=$('refreshBtn'); btn.disabled=true; btn.textContent='Actualizando…';
+  var chunks=[]; for(var i=0;i<ids.length;i+=30)chunks.push(ids.slice(i,i+30));
+  chunks.reduce(function(p,ch){
+    return p.then(function(){return fetch(API+'cardinfo.php?id='+ch.join(',')).then(function(r){if(!r.ok)throw new Error('http');return r.json()}).then(function(j){
+      (j.data||[]).forEach(function(card){
+        cardCache.set(card.id,card);
+        items.forEach(function(it){
+          if(it.cardId!==card.id)return;
+          it.stores=storesFrom(card);
+          var s=(card.card_sets||[]).filter(function(x){return x.set_code===it.setCode&&x.set_rarity===it.rarity})[0];
+          if(s)it.printPrice=num(s.set_price);
+        });
+      });
+    })}).then(function(){return sleep(120)});
+  },Promise.resolve()).then(function(){prefs.pricesTs=Date.now();save();render();setStatus('Precios actualizados.')}).catch(function(){setStatus('No se pudieron actualizar los precios. Revisa tu conexión.',true)}).then(function(){btn.disabled=false;btn.textContent='Actualizar precios'});
+}
+
+/* ---------- opciones con imagen ---------- */
+function clearOptions(){$('opts').hidden=true;$('cands').replaceChildren()}
+function showOptions(entries,title,frozen){
+  var box=$('cands'); box.replaceChildren(); shownIds=[];
+  entries.forEach(function(en){
+    var c=en.card, th=thumbOf(c); shownIds.push(c.id);
+    var img=th?h('img',{src:th,alt:'',loading:'lazy',referrerpolicy:'no-referrer',onerror:function(e){e.target.style.display='none'}}):null;
+    box.append(h('button',{class:'cand',type:'button',onclick:function(){if(en.pick)en.pick();else commitCard(c)}},img,h('span',{text:c.name}),en.s!=null?h('span',{class:'pct',text:Math.round(en.s*100)+'% seguro'}):null));
+  });
+  $('optsClose').textContent=frozen?(entries.length===1?'No es':'No es ninguna'):'Cerrar';
+  $('optsTitle').textContent=title; $('opts').hidden=false;
+}
+/* congela la lectura hasta que la persona confirme si es o no */
+function freeze(entries,title){
+  state='confirm'; weak=0; votes=[]; nameVotes=[];
+  try{rejSig=signature()}catch(e){rejSig=null}
+  rejChange=0;
+  setGuide('confirm');
+  showOptions(entries,title,true);
+  setStatus('Congelado: confirma cuál es o toca «'+(entries.length===1?'No es':'No es ninguna')+'».');
+}
+function rejectAll(){
+  shownIds.forEach(function(id){rejected[id]=1});
+  clearOptions(); state='scanning'; failTicks=0; weak=0; votes=[]; nameVotes=[];
+  setGuide(''); setStatus('Descartada. Sigo buscando; también puedes escribir el código o nombre abajo.');
+}
+function askCode(found,force){
+  if(!prefs.confirmAll&&!force)return acceptCode(found);
+  return loadCard(found.info.id).then(function(card){
+    freeze([{card:card,s:Math.min(1,Math.max(0,found.conf/100)),pick:function(){return acceptCode(found)}}],'¿Es esta carta? (código '+found.info.set_code+')');
+  });
+}
+function commitCard(card){
+  var base=baseFromCard(card), it=addItem(base);
+  beep(); clearOptions();
+  showTag([h('b',{text:'✓ '+it.name}),h('span',{class:'sub',text:(base.needsPrint?'Elige la impresión en la lista':it.setCode+' · '+it.rarity)+' · ×'+it.qty})],true,running?0:2500);
+  setStatus(running?'Agregada por nombre. Retira la carta para la siguiente.':'Agregada.');
+  if(running&&video.videoWidth&&state!=='idle'){lock();setGuide('ok')}
+}
+
+/* ---------- cámara ---------- */
+function guideInVideo(){
+  var vr=video.getBoundingClientRect(), gr=guide.getBoundingClientRect();
+  var vw=video.videoWidth, vh=video.videoHeight;
+  var scale=Math.max(vr.width/vw,vr.height/vh);
+  var offX=(vr.width-vw*scale)/2, offY=(vr.height-vh*scale)/2;
+  var x=(gr.left-vr.left-offX)/scale, y=(gr.top-vr.top-offY)/scale, w=gr.width/scale, hh=gr.height/scale;
+  x=Math.max(0,x); y=Math.max(0,y); w=Math.min(w,vw-x); hh=Math.min(hh,vh-y);
+  return {x:x,y:y,w:w,h:hh};
+}
+function pct(hist,n,p){var acc=0,t=n*p;for(var i=0;i<256;i++){acc+=hist[i];if(acc>=t)return i}return 255}
+/* zonas de la carta que NO contienen el código ni el nombre (fracciones del ancho/alto de la carta) */
+var IGNORE_ZONES=[
+  {k:'atributo',x0:0.83,x1:1.00,y0:0.00,y1:0.115},
+  {k:'estrellas',x0:0.00,x1:1.00,y0:0.115,y1:0.165},
+  {k:'ilustracion',x0:0.00,x1:1.00,y0:0.17,y1:0.62},
+  {k:'tipo-y-efecto',x0:0.00,x1:1.00,y0:0.685,y1:0.905},
+  {k:'atk-def',x0:0.50,x1:1.00,y0:0.905,y1:0.95}
+];
+function grabRegion(xr0,xr1,yr0,yr1,outW,flip,adapt,mask){
+  var r=guideInVideo();
+  var sx=r.x+r.w*xr0, sw=r.w*(xr1-xr0), sy=r.y+r.h*yr0, sh=r.h*(yr1-yr0);
+  var outH=Math.max(1,Math.round(sh*outW/sw));
+  work.width=outW; work.height=outH;
+  var ctx=work.getContext('2d',{willReadFrequently:true});
+  ctx.imageSmoothingQuality='high';
+  ctx.drawImage(video,sx,sy,sw,sh,0,0,outW,outH);
+  var img=ctx.getImageData(0,0,outW,outH), d=img.data, n=outW*outH;
+  var gray=new Uint8ClampedArray(n), hist=new Uint32Array(256), sum=0, i, p;
+  for(i=0,p=0;i<n;i++,p+=4){var g=((d[p]*299+d[p+1]*587+d[p+2]*114)/1000)|0;gray[i]=g;sum+=g;hist[g]++}
+  var mean=sum/n, lo=pct(hist,n,0.02), hi=pct(hist,n,0.98); if(hi-lo<20)hi=lo+20;
+  var invert=(mean<105)!==!!flip, v8=new Uint8ClampedArray(n);
+  for(i=0;i<n;i++){var v=(gray[i]-lo)*255/(hi-lo); v=v<0?0:(v>255?255:v); v8[i]=invert?255-v:v}
+  if(mask){
+    IGNORE_ZONES.forEach(function(z){
+      var ax=Math.max(0,Math.round((z.x0-xr0)/(xr1-xr0)*outW)), bx=Math.min(outW,Math.round((z.x1-xr0)/(xr1-xr0)*outW));
+      var ay=Math.max(0,Math.round((z.y0-yr0)/(yr1-yr0)*outH)), by=Math.min(outH,Math.round((z.y1-yr0)/(yr1-yr0)*outH));
+      if(bx<=ax||by<=ay)return;
+      for(var yy=ay;yy<by;yy++)v8.fill(255,yy*outW+ax,yy*outW+bx);
+    });
+  }
+  if(adapt){
+    /* umbral local (imagen integral): resiste sombras, brillos y fondos con ilustración */
+    var W=outW,H=outH,W1=W+1,ii=new Float64Array(W1*(H+1)),x,y,row;
+    for(y=0;y<H;y++){row=0;for(x=0;x<W;x++){row+=v8[y*W+x];ii[(y+1)*W1+x+1]=ii[y*W1+x+1]+row}}
+    var rad=Math.max(8,Math.round(W/40)), out=new Uint8ClampedArray(n);
+    for(y=0;y<H;y++){
+      var y0=Math.max(0,y-rad),y1=Math.min(H,y+rad+1);
+      for(x=0;x<W;x++){
+        var x0=Math.max(0,x-rad),x1=Math.min(W,x+rad+1);
+        var m=(ii[y1*W1+x1]-ii[y0*W1+x1]-ii[y1*W1+x0]+ii[y0*W1+x0])/((x1-x0)*(y1-y0));
+        out[y*W+x]=v8[y*W+x]>m*0.9?255:0;
+      }
+    }
+    v8=out;
+  }
+  for(i=0,p=0;i<n;i++,p+=4){d[p]=d[p+1]=d[p+2]=v8[i];d[p+3]=255}
+  ctx.putImageData(img,0,0);
+  return work;
+}
+/* nitidez del encuadre: se usa para no gastar lecturas en cuadros borrosos */
+function frameSharp(){
+  var r=guideInVideo(), W=240, H=Math.max(1,Math.round(r.h*W/r.w));
+  thumbCv.width=W; thumbCv.height=H;
+  var c=thumbCv.getContext('2d',{willReadFrequently:true});
+  c.drawImage(video,r.x,r.y,r.w,r.h,0,0,W,H);
+  var d=c.getImageData(0,0,W,H).data, g=new Float32Array(W*H), i, x, y, s=0, lo=255, hi=0;
+  for(i=0;i<W*H;i++){var q=(d[i*4]*299+d[i*4+1]*587+d[i*4+2]*114)/1000;g[i]=q;if(q<lo)lo=q;if(q>hi)hi=q}
+  for(y=1;y<H;y++)for(x=1;x<W;x++){i=y*W+x;s+=Math.abs(g[i]-g[i-1])+Math.abs(g[i]-g[i-W])}
+  return s/(W*H)/Math.max(20,hi-lo);
+}
+function signature(){
+  var r=guideInVideo(), ctx=sigCv.getContext('2d',{willReadFrequently:true});
+  ctx.drawImage(video,r.x,r.y,r.w,r.h,0,0,24,34);
+  var d=ctx.getImageData(0,0,24,34).data, out=new Uint8Array(24*34);
+  for(var i=0,p=0;i<out.length;i++,p+=4)out[i]=((d[p]*299+d[p+1]*587+d[p+2]*114)/1000)|0;
+  return out;
+}
+function sigDiff(a){
+  var b=signature(), s=0; for(var i=0;i<a.length;i++)s+=Math.abs(a[i]-b[i]);
+  return s/a.length;
+}
+
+function initWorker(){
+  if(worker)return Promise.resolve();
+  if(!window.Tesseract)return Promise.reject(new Error('El lector no se pudo descargar. Revisa tu conexión a internet.'));
+  setStatus('Cargando el lector de texto (la primera vez tarda un poco)…');
+  return Tesseract.createWorker('eng',1,{}).then(function(w){
+    return w.setParameters({tessedit_char_whitelist:CODE_WL,tessedit_pageseg_mode:'11',user_defined_dpi:'300'}).then(function(){worker=w;curMode='code'});
+  });
+}
+function ocr(cv,mode){
+  var p=Promise.resolve();
+  if(curMode!==mode){
+    p=worker.setParameters(mode==='name'?{tessedit_char_whitelist:NAME_WL,tessedit_pageseg_mode:'7'}:(mode==='line'?{tessedit_char_whitelist:CODE_WL,tessedit_pageseg_mode:'7'}:{tessedit_char_whitelist:CODE_WL,tessedit_pageseg_mode:'11'})).then(function(){curMode=mode});
+  }
+  return p.then(function(){return worker.recognize(cv)});
+}
+function listDevices(){
+  if(!navigator.mediaDevices||!navigator.mediaDevices.enumerateDevices)return;
+  navigator.mediaDevices.enumerateDevices().then(function(ds){
+    var cams=ds.filter(function(d){return d.kind==='videoinput'}), sel=$('camSel');
+    if(cams.length<2){sel.hidden=true;return}
+    sel.replaceChildren(); var cur=stream&&stream.getVideoTracks()[0]&&stream.getVideoTracks()[0].getSettings().deviceId;
+    cams.forEach(function(c,i){sel.append(h('option',{value:c.deviceId,selected:c.deviceId===cur,text:c.label||('Cámara '+(i+1))}))});
+    sel.hidden=false;
+  }).catch(function(){});
+}
+function startCamera(deviceId){
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+    setStatus('Este navegador no permite usar la cámara aquí. Abre el enlace https en Chrome o Safari.',true);return Promise.resolve(false);
+  }
+  if(stream){stream.getTracks().forEach(function(t){t.stop()});stream=null}
+  var v=deviceId?{deviceId:{exact:deviceId},width:{ideal:1920},height:{ideal:1080}}:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}};
+  return navigator.mediaDevices.getUserMedia({audio:false,video:v}).then(function(s){
+    stream=s; video.srcObject=s; return video.play();
+  }).then(function(){
+    try{
+      var t=stream.getVideoTracks()[0], caps=t.getCapabilities&&t.getCapabilities();
+      if(caps&&caps.focusMode&&caps.focusMode.indexOf('continuous')>-1)t.applyConstraints({advanced:[{focusMode:'continuous'}]}).catch(function(){});
+    }catch(e){}
+    listDevices(); return true;
+  }).catch(function(e){
+    var n=e&&e.name;
+    setStatus(n==='NotAllowedError'?'Permiso de cámara denegado. Permítelo en el navegador y vuelve a intentar.':(n==='NotFoundError'?'No se encontró ninguna cámara.':'No se pudo abrir la cámara.'),true);
+    return false;
+  });
+}
+
+/* ---------- ciclo de lectura ---------- */
+function lock(){state='locked';lockSig=signature();changeCount=0}
+function unlock(){state='scanning';rejected={};rejSig=null;weak=0;votes=[];nameVotes=[];failTicks=0;lockSig=null;setGuide('');hideTag();clearOptions();lastCodeRaw='';lastNameRaw='';setDbg();setStatus('Siguiente carta.')}
+
+function acceptCode(found){
+  return buildFromCode(found.info,detectLang(found.token)).then(function(base){
+    var it=addItem(base);
+    beep(); clearOptions();
+    lock(); setGuide('ok');
+    var multi=base.options.length>1;
+    var v=itemValue(it,prefs.basis);
+    showTag([h('b',{text:'✓ '+it.name}),h('span',{class:'sub',text:it.setCode+' · '+it.rarity+(multi?' (revisa la rareza en la lista)':'')+' · ×'+it.qty+(v>0?' · '+money(v):'')})],true,0);
+    setStatus('Identificada por código. Retira la carta para la siguiente.');
+  });
+}
+/* segunda pasada: recorta el código detectado, lo amplía y lo vuelve a leer en una sola línea */
+function refine(res){
+  var ws=(res.data&&res.data.words)||[], best=null;
+  ws.forEach(function(w){
+    var t=String(w.text||'').toUpperCase().replace(/[^A-Z0-9-]/g,'');
+    if(t.length<5||!w.bbox||!candidateCodes(t).length)return;
+    if(!best||(w.confidence||0)>(best.confidence||0))best=w;
+  });
+  if(!best)return Promise.resolve(null);
+  var b=best.bbox, h=b.y1-b.y0, w0=b.x1-b.x0;
+  if(!(h>=6)||!(w0>=20))return Promise.resolve(null);
+  var padX=Math.round(h*0.6), padY=Math.round(h*0.4);
+  var sx=Math.max(0,b.x0-padX), sy=Math.max(0,b.y0-padY);
+  var sw=Math.min(work.width-sx,w0+2*padX), sh=Math.min(work.height-sy,h+2*padY);
+  var k=Math.min(5,Math.max(1.5,110/sh));
+  zoomCv.width=Math.round(sw*k); zoomCv.height=Math.round(sh*k);
+  var z=zoomCv.getContext('2d');
+  z.imageSmoothingQuality='high'; z.fillStyle='#fff'; z.fillRect(0,0,zoomCv.width,zoomCv.height);
+  z.drawImage(work,sx,sy,sw,sh,0,0,zoomCv.width,zoomCv.height);
+  return ocr(zoomCv,'line').then(function(r2){return r2}).catch(function(){return null});
+}
+function codeStep(bi,flip,adapt,mask){
+  var B=prefs.dist==='near'?BANDS_NEAR:BANDS, b=B[bi%B.length], whole=(b[1]-b[0])>0.9;
+  var cv=grabRegion(0,1,b[0],b[1],whole?1400:1100,flip,adapt,mask);
+  return ocr(cv,'code').then(function(res){
+    lastCodeRaw=String(res.data.text||'').replace(/\s+/g,' ').trim();
+    var toks=extractTokens(res.data);
+    return refine(res).then(function(r2){
+      if(r2&&r2.data){
+        var rt=extractTokens(r2.data).map(function(t){return {token:t.token,conf:t.conf+4}});
+        if(rt.length){lastCodeRaw=lastCodeRaw+' ⇒ '+rt[0].token;toks=rt.concat(toks)}
+      }
+      var found=null, chain=Promise.resolve(), tried=0;
+      toks.slice(0,3).forEach(function(tk){
+        snapCandidates(candidateCodes(tk.token),known).slice(0,5).forEach(function(c){
+          chain=chain.then(function(){
+            if(found||tried>=8)return;
+            tried++;
+            return lookupSet(c).then(function(info){if(info&&!found)found={info:info,conf:tk.conf,token:tk.token}});
+          });
+        });
+      });
+      return chain.then(function(){return found});
+    });
+  });
+}
+function nameStep(flip,ni){
+  var cv;
+  if(prefs.dist==='near'){var nb=NAME_NEAR[ni%NAME_NEAR.length];cv=grabRegion(0.04,0.96,nb[0],nb[1],1100,flip)}
+  else cv=grabRegion(0.03,0.83,0.02,0.105,1000,flip);
+  return ocr(cv,'name').then(function(res){
+    var raw=cleanName(res.data.text); lastNameRaw=raw;
+    if(raw.length<4||isTypeLine(raw))return null;
+    var qs=nameQueries(raw), all=[], seen={}, chain=Promise.resolve(), good=false;
+    qs.forEach(function(q){
+      chain=chain.then(function(){
+        if(good)return;
+        return searchNames(q).then(function(list){
+          list.forEach(function(c){if(!seen[c.id]){seen[c.id]=1;all.push(c)}});
+          if(list.some(function(c){return nameScore(raw,c.name)>=0.9}))good=true;
+        });
+      });
+    });
+    return chain.then(function(){
+      var ranked=all.map(function(c){return {card:c,s:nameScore(raw,c.name)}}).sort(function(a,b){return b.s-a.s});
+      return {raw:raw,ranked:ranked};
+    });
+  });
+}
+function scanOnce(){
+  if(video.readyState<2||!video.videoWidth)return sleep(120);
+  if(rejSig){var dd=sigDiff(rejSig); rejChange=dd>30?rejChange+1:0; if(rejChange>=2){rejected={};rejSig=null;rejChange=0}}
+  var nb=prefs.dist==='near'?BANDS_NEAR.length:BANDS.length, bi=failTicks%nb, vr=VARIANTS[Math.floor(failTicks/nb)%VARIANTS.length];
+  var flip=vr[0], adapt=vr[1], mask=vr[2]&&prefs.dist!=='near', ni=failTicks;
+  var sh=frameSharp(); sharpMax=Math.max(sh,sharpMax*0.97);
+  if(sh<sharpMax*0.6&&blurSkips<2){blurSkips++;setStatus('Imagen borrosa: espera a que enfoque o aleja un poco la carta.');return sleep(110)}
+  blurSkips=0;
+  setGuide('reading');
+  return codeStep(bi,flip,adapt,mask).then(function(found){
+    setDbg();
+    if(found&&rejected[found.info.id])found=null;
+    if(found){
+      failTicks=0;
+      var code=found.info.set_code, now=Date.now();
+      votes.push({code:code,t:now}); votes=votes.filter(function(v){return now-v.t<4000});
+      var n=votes.filter(function(v){return v.code===code}).length;
+      if(found.conf>=SUGGEST*100&&found.conf<AUTO*100){
+        /* entre 85% y 88%: no se agrega sola, se sugiere y se congela hasta confirmar */
+        return askCode(found,true);
+      }
+      if(found.conf>=AUTO*100){
+        /* lectura no tan segura: confirma con el nombre para no aceptar un número mal leído */
+        if(found.conf<94){
+          return nameStep(flip,ni).then(function(r){
+            if(r&&r.raw.length>=6&&nameScore(r.raw,found.info.name)<0.4&&r.ranked.length&&r.ranked[0].s>=0.5){
+              votes=[];failTicks++;
+              setStatus('El código y el nombre no coinciden; revisando…');
+              return handleName(r);
+            }
+            return askCode(found);
+          });
+        }
+        return askCode(found);
+      }
+      setStatus('Confirmando '+code+'…');
+      return;
+    }
+    return nameStep(flip,ni).then(function(r){
+      setDbg();
+      failTicks++;
+      return handleName(r);
+    });
+  });
+}
+function decide(top){
+  if(prefs.confirmAll)return freeze([top],'¿Es esta carta?');
+  return commitCard(top.card);
+}
+function handleName(r){
+  if(r&&r.ranked)r.ranked=r.ranked.filter(function(x){return !rejected[x.card.id]});
+  if(!r||!r.ranked.length){weak=0;setGuide('');setStatus('Buscando el código o el nombre…');return}
+  var top=r.ranked[0], second=r.ranked[1], now=Date.now();
+  if(top.s>=AUTO&&(!second||top.s-second.s>=0.06)){
+    weak=0;
+    nameVotes.push({id:top.card.id,t:now}); nameVotes=nameVotes.filter(function(v){return now-v.t<5000});
+    var n=nameVotes.filter(function(v){return v.id===top.card.id}).length;
+    if(top.s>=0.95||n>=2){failTicks=0;return decide(top)}
+    setStatus('Confirmando "'+top.card.name+'"…');
+  }else if(top.s>=SUGGEST){
+    weak++;
+    if(weak>=2)freeze(r.ranked.slice(0,5),'Seguridad entre 85% y 88%. ¿Es alguna de estas? (leí "'+r.raw+'")');
+    else setStatus('Leyendo… ('+Math.round(top.s*100)+'% de seguridad)');
+  }else{
+    weak=0;setGuide('');setStatus('Buscando el código o el nombre…');
+  }
+}
+function loop(){
+  if(running)return; running=true;
+  (function tick(){
+    if(!running)return;
+    var p;
+    if(state==='confirm'){p=sleep(150)}
+    else if(state==='locked'){
+      var d=sigDiff(lockSig); changeCount=d>30?changeCount+1:0;
+      if(changeCount>=2)unlock();
+      p=sleep(140);
+    }else{
+      p=scanOnce().catch(function(e){
+        setGuide('');
+        setStatus(errText(e),true);
+        return sleep(1500);
+      }).then(function(){return sleep(20)});
+    }
+    p.then(tick);
+  })();
+}
+function pause(){running=false;state='scanning';setGuide('');$('pauseBtn').textContent='Reanudar';setStatus('Lectura en pausa.')}
+function resume(){clearOptions();state='scanning';votes=[];nameVotes=[];failTicks=0;$('pauseBtn').textContent='Pausar';setStatus('Muestra una carta.');loop()}
+
+$('startBtn').addEventListener('click',function(){
+  var btn=$('startBtn'); btn.disabled=true; btn.textContent='Iniciando…';
+  try{audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)()}catch(e){}
+  startCamera().then(function(ok){
+    if(!ok){btn.disabled=false;btn.textContent='Iniciar cámara';return}
+    $('start').hidden=true; $('pauseBtn').disabled=false;
+    return initWorker().then(function(){state='scanning';$('pauseBtn').textContent='Pausar';setStatus('Muestra una carta.');loop()});
+  }).catch(function(e){setStatus(e.message||'No se pudo iniciar el lector.',true);$('start').hidden=false;btn.disabled=false;btn.textContent='Reintentar'});
+});
+$('distBtn').addEventListener('click',function(){prefs.dist=prefs.dist==='near'?'far':'near';failTicks=0;save();applyDist();setStatus(prefs.dist==='near'?'Modo cerca: acerca la carta; basta con ver el código o el nombre.':'Modo lejos: encaja la carta completa en el marco.')});
+$('pauseBtn').addEventListener('click',function(){running?pause():resume()});
+$('camSel').addEventListener('change',function(e){startCamera(e.target.value)});
+$('optsClose').addEventListener('click',function(){if(state==='confirm')rejectAll();else clearOptions()});
+$('confBtn').addEventListener('click',function(){prefs.confirmAll=!prefs.confirmAll;save();applyConf();setStatus(prefs.confirmAll?'Voy a pedirte confirmación en todas las cartas.':'Solo pido confirmación cuando la seguridad está entre 85% y 88%.')});
+
+function manualByName(raw){
+  setStatus('Buscando "'+raw+'"…');
+  var qs=[raw].concat(nameQueries(raw).filter(function(q){return q!==raw})), all=[], seen={}, chain=Promise.resolve();
+  qs.forEach(function(q){
+    chain=chain.then(function(){
+      if(all.length)return;
+      return searchNames(q).then(function(list){list.forEach(function(c){if(!seen[c.id]){seen[c.id]=1;all.push(c)}})});
+    });
+  });
+  return chain.then(function(){
+    if(!all.length){clearOptions();setStatus('No encontré cartas con ese nombre. Revisa que esté en inglés.',true);return}
+    var ranked=all.map(function(c){return {card:c,s:nameScore(raw,c.name)}}).sort(function(a,b){return b.s-a.s}).slice(0,8);
+    showOptions(ranked,'Resultados para "'+raw+'". Toca la correcta.');
+    setStatus('Elige la carta de la lista de opciones.');
+  });
+}
+$('manualForm').addEventListener('submit',function(e){
+  e.preventDefault();
+  var raw=$('manualIn').value.trim(); if(!raw)return;
+  var cands=looksLikeCode(raw)?candidateCodes(raw.toUpperCase().replace(/\s+/g,'')):[], found=null;
+  var p=Promise.resolve();
+  if(cands.length){
+    setStatus('Buscando '+raw.toUpperCase()+'…');
+    p=cands.reduce(function(pp,c){return pp.then(function(){if(found)return;return lookupSet(c).then(function(info){if(info)found={info:info,token:raw.toUpperCase().replace(/\s+/g,'')}})})},Promise.resolve());
+  }
+  p.then(function(){
+    if(found){
+      return buildFromCode(found.info,detectLang(found.token)).then(function(base){
+        var it=addItem(base); beep(); clearOptions();
+        showTag([h('b',{text:'✓ '+it.name}),h('span',{class:'sub',text:it.setCode+' · '+it.rarity+' · ×'+it.qty})],true,2500);
+        setStatus('Agregada.'); $('manualIn').value='';
+        if(running&&video.videoWidth&&state!=='idle'){lock();setGuide('ok')}
+      });
+    }
+    return manualByName(raw);
+  }).catch(function(err){setStatus(errText(err),true)});
+});
+$('fx').addEventListener('change',function(e){var f=parseFloat(e.target.value);prefs.fx=f>0?f:0;save();render()});
+$('fxAutoBtn').addEventListener('click',function(){prefs.fx=0;save();render();$('fxAutoBtn').disabled=true;fetchFx(true).then(function(){$('fxAutoBtn').disabled=false;render()})});
+$('basis').addEventListener('change',function(e){prefs.basis=e.target.value;save();render()});
+$('csvBtn').addEventListener('click',exportCsv);
+$('refreshBtn').addEventListener('click',refreshPrices);
+$('clearBtn').addEventListener('click',function(){
+  if(items.length&&window.confirm('¿Vaciar el inventario? Las ventas, compras y gastos registrados se conservan. Exporta el CSV antes si lo necesitas.')){items=[];save();renderAll()}
+});
+document.addEventListener('visibilitychange',function(){if(document.hidden&&running)pause()});
+
+/* =====================================================================
+   ADMINISTRACIÓN: ventas, compras, gastos, resumen y ajustes
+   ===================================================================== */
+var toastT=null;
+function toast(msg){
+  var t=$('toast'); t.textContent=msg; t.hidden=false;
+  clearTimeout(toastT); toastT=setTimeout(function(){t.hidden=true},3200);
+}
+function todayStr(){var d=new Date(),p=function(n){return String(n).padStart(2,'0')};return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())}
+function monthOf(date){return String(date||'').slice(0,7)}
+function monthName(key){
+  var p=String(key).split('-'); if(p.length<2)return key;
+  var s=new Date(+p[0],+p[1]-1,1).toLocaleDateString('es-MX',{month:'long',year:'numeric'});
+  return s.charAt(0).toUpperCase()+s.slice(1);
+}
+function dateEs(date){
+  var p=String(date||'').split('-'); if(p.length<3)return date||'';
+  return new Date(+p[0],+p[1]-1,+p[2]).toLocaleDateString('es-MX',{day:'numeric',month:'short',year:'numeric'});
+}
+function round2(n){return Math.round((Number(n)||0)*100)/100}
+function findItem(id){for(var i=0;i<items.length;i++)if(items[i].id===id)return items[i];return null}
+function fillSelect(sel,list,cur){
+  sel.replaceChildren(); var l=list.slice(); if(cur&&l.indexOf(cur)<0)l.push(cur);
+  l.forEach(function(c){sel.append(h('option',{value:c,selected:c===cur,text:c}))});
+}
+
+/* ---------- selector de producto con búsqueda ---------- */
+function makePicker(box,onPick){
+  var inp=h('input',{class:'txt',type:'search',placeholder:'Buscar producto por nombre, código o SKU',autocomplete:'off','aria-label':'Buscar producto'});
+  var sel=h('select',{class:'sel','aria-label':'Producto'}), cur=null;
+  function label(it){return it.name+' · '+(it.setCode||it.type||'')+(it.rarity&&it.rarity!=='N/A'?' · '+it.rarity:'')+' · '+(it.cond||DEF_COND)+' · stock '+stockOf(it)}
+  function fill(){
+    var q=inp.value.trim().toLowerCase();
+    var list=items.filter(function(it){return !q||(it.name+' '+(it.setCode||'')+' '+skuOf(it)).toLowerCase().indexOf(q)>-1}).sort(function(a,b){return a.name.localeCompare(b.name)}).slice(0,100);
+    sel.replaceChildren(h('option',{value:'',text:items.length?(list.length?'Elige un producto…':'Sin resultados'):'Primero agrega productos al inventario'}));
+    list.forEach(function(it){sel.append(h('option',{value:it.id,selected:it.id===cur,text:label(it)}))});
+  }
+  inp.addEventListener('input',fill);
+  sel.addEventListener('change',function(){cur=sel.value||null;if(onPick)onPick(cur?findItem(cur):null)});
+  box.replaceChildren(inp,sel); fill();
+  return {value:function(){return cur?findItem(cur):null},reset:function(){cur=null;inp.value='';fill()},refresh:fill};
+}
+
+/* ---------- lista mensual genérica ---------- */
+function monthOptions(sel,rows,keep){
+  var set={}; set[monthOf(todayStr())]=1; rows.forEach(function(r){if(r.date)set[monthOf(r.date)]=1});
+  var keys=Object.keys(set).sort().reverse(), cur=keep||sel.value||monthOf(todayStr());
+  sel.replaceChildren(h('option',{value:'all',text:'Todos los meses'}));
+  keys.forEach(function(k){sel.append(h('option',{value:k,text:monthName(k)}))});
+  sel.value=(cur==='all'||set[cur])?cur:monthOf(todayStr());
+}
+function inMonth(rows,sel){var m=sel.value;return rows.filter(function(r){return m==='all'||monthOf(r.date)===m}).sort(function(a,b){return String(b.date).localeCompare(String(a.date))||((b.ts||0)-(a.ts||0))})}
+
+/* ---------- VENTAS ---------- */
+var venPick, comPick;
+function venCalc(){
+  var q=parseFloat($('venQty').value)||0, p=parseFloat($('venPrice').value)||0, d=Math.min(100,Math.max(0,parseFloat($('venDisc').value)||0));
+  var total=round2(q*p*(1-d/100));
+  $('venTotal').textContent='Total: '+fmt(total);
+  var it=venPick.value(), w=$('venWarn');
+  if(it&&q>stockOf(it)){w.hidden=false;w.textContent='Solo hay '+stockOf(it)+' en stock de este producto.'}
+  else w.hidden=true;
+  return total;
+}
+function renderSales(){
+  monthOptions($('venMonth'),sales);
+  var rows=inMonth(sales,$('venMonth')), list=$('venList'); list.replaceChildren();
+  var tot=0,cost=0;
+  rows.forEach(function(s){
+    tot+=s.total;cost+=s.costTotal||0;
+    var util=round2(s.total-(s.costTotal||0));
+    list.append(h('li',{class:'entry'},
+      h('div',{class:'t',text:s.name}),
+      h('div',{class:'a'},fmt(s.total),h('small',{text:'utilidad '+fmt(util)})),
+      h('div',{class:'m',text:dateEs(s.date)+' · '+s.qty+' × '+fmt(s.unit)+(s.disc>0?' −'+Math.round(s.disc*100)+'%':'')+' · '+(s.pay||'')+(s.notes?' · '+s.notes:'')}),
+      h('button',{class:'rm',type:'button',text:'Eliminar',onclick:function(){
+        if(!window.confirm('¿Eliminar esta venta? El stock se restaura.'))return;
+        sales=sales.filter(function(x){return x!==s});save();renderAll();toast('Venta eliminada.');
+      }})));
+  });
+  $('venEmpty').hidden=rows.length>0;
+  var sum=$('venSum'); sum.replaceChildren(h('span',null,h('b',{text:rows.length}),' ventas'),h('span',null,'total ',h('b',{text:fmt(tot)})),h('span',null,'utilidad ',h('b',{text:fmt(tot-cost)})));
+  venPick.refresh();
+}
+function setupSales(){
+  venPick=makePicker($('venPicker'),function(it){
+    if(it){var p=priceMx(it);$('venPrice').value=p>0?p:'';}
+    venCalc();
+  });
+  $('venFecha').value=todayStr();
+  ['venQty','venPrice','venDisc'].forEach(function(id){$(id).addEventListener('input',venCalc)});
+  $('venForm').addEventListener('submit',function(e){
+    e.preventDefault();
+    var it=venPick.value(); if(!it){toast('Elige el producto vendido.');return}
+    var q=parseInt($('venQty').value,10), p=parseFloat($('venPrice').value), d=Math.min(100,Math.max(0,parseFloat($('venDisc').value)||0))/100;
+    if(!(q>0)||!(p>=0)){toast('Revisa la cantidad y el precio.');return}
+    if(q>stockOf(it)&&!window.confirm('Solo hay '+stockOf(it)+' en stock de «'+it.name+'». ¿Registrar la venta de todos modos? El stock quedará en negativo.'))return;
+    sales.push({id:uid(),ts:Date.now(),date:$('venFecha').value||todayStr(),pid:it.id,sku:skuOf(it),name:it.name,qty:q,unit:p,disc:d,total:round2(q*p*(1-d)),costUnit:it.cost!=null?it.cost:0,costTotal:round2(q*(it.cost!=null?it.cost:0)),pay:$('venPay').value,notes:$('venNotes').value.trim()});
+    save(); venPick.reset(); $('venQty').value=1;$('venPrice').value='';$('venDisc').value=0;$('venNotes').value='';
+    renderAll(); venCalc(); toast('Venta registrada.');
+  });
+  $('venMonth').addEventListener('change',renderSales);
+  $('venCsv').addEventListener('click',function(){
+    var rows=inMonth(sales,$('venMonth')); if(!rows.length){toast('No hay ventas para exportar.');return}
+    downloadCsv('ventas',['Fecha','SKU','Producto','Cantidad','Precio lista','Descuento %','Total venta','Costo total','Utilidad','Método de pago','Notas / Cliente'],
+      rows.map(function(s){return [s.date,s.sku,s.name,s.qty,s.unit,Math.round(s.disc*100),s.total,s.costTotal||0,round2(s.total-(s.costTotal||0)),s.pay,s.notes||'']}));
+  });
+}
+
+/* ---------- COMPRAS ---------- */
+function comCalc(){var t=round2((parseFloat($('comQty').value)||0)*(parseFloat($('comCost').value)||0));$('comTotal').textContent='Total: '+fmt(t)}
+function renderPurchases(){
+  monthOptions($('comMonth'),purchases);
+  var rows=inMonth(purchases,$('comMonth')), list=$('comList'); list.replaceChildren(); var tot=0;
+  rows.forEach(function(p){
+    tot+=p.total;
+    list.append(h('li',{class:'entry'},
+      h('div',{class:'t',text:p.name}),h('div',{class:'a'},fmt(p.total)),
+      h('div',{class:'m',text:dateEs(p.date)+' · '+p.qty+' × '+fmt(p.unit)+(p.supplier?' · '+p.supplier:'')+(p.notes?' · '+p.notes:'')}),
+      h('button',{class:'rm',type:'button',text:'Eliminar',onclick:function(){
+        if(!window.confirm('¿Eliminar esta compra? El stock baja; el costo del producto no se recalcula.'))return;
+        purchases=purchases.filter(function(x){return x!==p});save();renderAll();toast('Compra eliminada.');
+      }})));
+  });
+  $('comEmpty').hidden=rows.length>0;
+  var sum=$('comSum'); sum.replaceChildren(h('span',null,h('b',{text:rows.length}),' compras'),h('span',null,'total ',h('b',{text:fmt(tot)})));
+  comPick.refresh();
+}
+function setupPurchases(){
+  comPick=makePicker($('comPicker'),function(it){if(it&&it.cost!=null)$('comCost').value=it.cost;comCalc()});
+  $('comFecha').value=todayStr();
+  ['comQty','comCost'].forEach(function(id){$(id).addEventListener('input',comCalc)});
+  $('comForm').addEventListener('submit',function(e){
+    e.preventDefault();
+    var it=comPick.value(); if(!it){toast('Elige el producto comprado.');return}
+    var q=parseInt($('comQty').value,10), u=parseFloat($('comCost').value);
+    if(!(q>0)||!(u>=0)){toast('Revisa la cantidad y el costo.');return}
+    var before=Math.max(0,stockOf(it));
+    it.cost=(before>0&&it.cost>0)?round2((before*it.cost+q*u)/(before+q)):round2(u);
+    purchases.push({id:uid(),ts:Date.now(),date:$('comFecha').value||todayStr(),pid:it.id,sku:skuOf(it),name:it.name,qty:q,unit:u,total:round2(q*u),supplier:$('comSup').value.trim(),notes:$('comNotes').value.trim()});
+    save(); comPick.reset(); $('comQty').value=1;$('comCost').value='';$('comNotes').value='';
+    renderAll(); comCalc(); toast('Compra registrada. Costo promedio: '+fmt(it.cost));
+  });
+  $('comMonth').addEventListener('change',renderPurchases);
+  $('comCsv').addEventListener('click',function(){
+    var rows=inMonth(purchases,$('comMonth')); if(!rows.length){toast('No hay compras para exportar.');return}
+    downloadCsv('compras',['Fecha','SKU','Producto','Cantidad','Costo unitario','Total compra','Proveedor','Notas'],
+      rows.map(function(p){return [p.date,p.sku,p.name,p.qty,p.unit,p.total,p.supplier||'',p.notes||'']}));
+  });
+}
+
+/* ---------- GASTOS ---------- */
+function renderExpenses(){
+  monthOptions($('gasMonth'),expenses);
+  var rows=inMonth(expenses,$('gasMonth')), list=$('gasList'); list.replaceChildren(); var tot=0;
+  rows.forEach(function(g){
+    tot+=g.amount;
+    list.append(h('li',{class:'entry'},
+      h('div',{class:'t',text:g.cat+(g.desc?' · '+g.desc:'')}),h('div',{class:'a'},fmt(g.amount)),
+      h('div',{class:'m',text:dateEs(g.date)+(g.pay?' · '+g.pay:'')+(g.notes?' · '+g.notes:'')}),
+      h('button',{class:'rm',type:'button',text:'Eliminar',onclick:function(){
+        if(!window.confirm('¿Eliminar este gasto?'))return;
+        expenses=expenses.filter(function(x){return x!==g});save();renderAll();toast('Gasto eliminado.');
+      }})));
+  });
+  $('gasEmpty').hidden=rows.length>0;
+  var sum=$('gasSum'); sum.replaceChildren(h('span',null,h('b',{text:rows.length}),' gastos'),h('span',null,'total ',h('b',{text:fmt(tot)})));
+}
+function setupExpenses(){
+  $('gasFecha').value=todayStr();
+  $('gasForm').addEventListener('submit',function(e){
+    e.preventDefault();
+    var a=parseFloat($('gasAmt').value); if(!(a>0)){toast('Escribe el monto del gasto.');return}
+    expenses.push({id:uid(),ts:Date.now(),date:$('gasFecha').value||todayStr(),cat:$('gasCat').value,desc:$('gasDesc').value.trim(),amount:round2(a),pay:$('gasPay').value,notes:$('gasNotes').value.trim()});
+    save(); $('gasAmt').value='';$('gasDesc').value='';$('gasNotes').value='';
+    renderAll(); toast('Gasto registrado.');
+  });
+  $('gasMonth').addEventListener('change',renderExpenses);
+  $('gasCsv').addEventListener('click',function(){
+    var rows=inMonth(expenses,$('gasMonth')); if(!rows.length){toast('No hay gastos para exportar.');return}
+    downloadCsv('gastos',['Fecha','Categoría','Descripción','Monto','Método de pago','Notas'],rows.map(function(g){return [g.date,g.cat,g.desc||'',g.amount,g.pay||'',g.notes||'']}));
+  });
+}
+
+/* ---------- RESUMEN ---------- */
+function summaryFor(year){
+  var months=[]; for(var m=1;m<=12;m++)months.push({k:year+'-'+String(m).padStart(2,'0'),v:0,c:0,g:0,p:0});
+  function bucket(date){var k=monthOf(date);for(var i=0;i<12;i++)if(months[i].k===k)return months[i];return null}
+  sales.forEach(function(s){var b=bucket(s.date);if(b){b.v+=s.total;b.c+=s.costTotal||0}});
+  expenses.forEach(function(g){var b=bucket(g.date);if(b)b.g+=g.amount});
+  purchases.forEach(function(p){var b=bucket(p.date);if(b)b.p+=p.total});
+  var t={v:0,c:0,g:0,p:0}; months.forEach(function(m){t.v+=m.v;t.c+=m.c;t.g+=m.g;t.p+=m.p});
+  return {months:months,total:t};
+}
+function chartSvg(months){
+  var W=640,H=190,pad=24,bw=(W-pad*2)/12, max=1;
+  months.forEach(function(m){max=Math.max(max,m.v,m.g)});
+  var ns='http://www.w3.org/2000/svg';
+  function el(n,a){var e=document.createElementNS(ns,n);Object.keys(a||{}).forEach(function(k){e.setAttribute(k,a[k])});return e}
+  var svg=el('svg',{viewBox:'0 0 '+W+' '+(H+46),class:'chart',role:'img','aria-label':'Gráfica de barras de ventas y gastos por mes'});
+  var names=['E','F','M','A','M','J','J','A','S','O','N','D'];
+  svg.append(el('line',{x1:pad,x2:W-pad,y1:H,y2:H,stroke:'currentColor','stroke-opacity':'.3'}));
+  months.forEach(function(m,i){
+    var x=pad+i*bw, hv=m.v/max*(H-16), hg=m.g/max*(H-16), w=bw*0.34;
+    var a=el('rect',{x:x+bw*0.12,y:H-hv,width:w,height:Math.max(hv,0),rx:2,fill:'var(--accent)'}); var ta=el('title');ta.textContent=monthName(m.k)+' · ventas '+fmt(m.v);a.append(ta);
+    var b=el('rect',{x:x+bw*0.12+w+2,y:H-hg,width:w,height:Math.max(hg,0),rx:2,fill:'var(--warn)'}); var tb=el('title');tb.textContent=monthName(m.k)+' · gastos '+fmt(m.g);b.append(tb);
+    var tx=el('text',{x:x+bw/2,y:H+17,'text-anchor':'middle'});tx.textContent=names[i];
+    svg.append(a,b,tx);
+  });
+  var l1=el('rect',{x:pad,y:H+26,width:14,height:14,rx:2,fill:'var(--accent)'}), t1=el('text',{x:pad+20,y:H+39});t1.textContent='Ventas';
+  var l2=el('rect',{x:pad+110,y:H+26,width:14,height:14,rx:2,fill:'var(--warn)'}), t2=el('text',{x:pad+130,y:H+39});t2.textContent='Gastos';
+  svg.append(l1,t1,l2,t2);
+  return svg;
+}
+function renderSummary(){
+  var ys={}; ys[new Date().getFullYear()]=1;
+  sales.concat(purchases,expenses).forEach(function(r){var y=String(r.date||'').slice(0,4);if(/^\d{4}$/.test(y))ys[y]=1});
+  var sel=$('resYear'), cur=sel.value||String(new Date().getFullYear());
+  sel.replaceChildren(); Object.keys(ys).sort().reverse().forEach(function(y){sel.append(h('option',{value:y,text:y}))});
+  sel.value=ys[cur]?cur:String(new Date().getFullYear());
+  var S=summaryFor(sel.value), t=S.total, gross=t.v-t.c, net=gross-t.g;
+  var invCost=0,invPrice=0;
+  items.forEach(function(it){var st=Math.max(0,stockOf(it));if(it.cost!=null)invCost+=st*it.cost;invPrice+=st*priceMx(it)});
+  var k=$('resKpis'); k.replaceChildren();
+  function kpi(label,val,cls){k.append(h('div',{class:'kpi'+(cls?' '+cls:'')},h('span',{text:label}),h('b',{text:fmt(val)})))}
+  kpi('Ventas del año',t.v); kpi('Costo de lo vendido',t.c); kpi('Utilidad bruta',gross,gross<0?'neg':'pos');
+  kpi('Gastos operativos',t.g); kpi('Utilidad neta',net,net<0?'neg':'pos'); kpi('Compras del año',t.p);
+  kpi('Inventario a costo',invCost); kpi('Inventario a precio de venta',invPrice);
+  var c=$('resChart'); c.replaceChildren(chartSvg(S.months));
+  var tb=$('resTable'); tb.replaceChildren();
+  tb.append(h('thead',null,h('tr',null,['Mes','Ventas','Costo','Utilidad bruta','Gastos','Utilidad neta'].map(function(x){return h('th',{text:x})}))));
+  var body=h('tbody');
+  S.months.forEach(function(m){
+    var gb=m.v-m.c, nt=gb-m.g;
+    body.append(h('tr',null,h('td',{text:monthName(m.k).split(' ')[0]}),h('td',{text:fmt(m.v)}),h('td',{text:fmt(m.c)}),h('td',{text:fmt(gb)}),h('td',{text:fmt(m.g)}),h('td',{text:fmt(nt),style:nt<0?'color:var(--bad)':''})));
+  });
+  tb.append(body,h('tfoot',null,h('tr',null,h('td',{text:'Total '+sel.value}),h('td',{text:fmt(t.v)}),h('td',{text:fmt(t.c)}),h('td',{text:fmt(gross)}),h('td',{text:fmt(t.g)}),h('td',{text:fmt(net)}))));
+  var rl=$('resReorder'); rl.replaceChildren(); var n=0;
+  items.slice().sort(function(a,b){return a.name.localeCompare(b.name)}).forEach(function(it){
+    var st=stockOf(it), e=estadoOf(st,it.minStock); if(e==='OK')return;
+    if(n++>=60)return;
+    var bd=badgeFor(e);
+    rl.append(h('li',{class:'entry'},h('div',{class:'t',text:it.name}),h('span',{class:'badge '+bd[0],text:bd[1]}),h('div',{class:'m',text:(it.setCode||it.type||'')+' · stock '+st+' · mínimo '+(it.minStock||0)})));
+  });
+  $('resReorderEmpty').hidden=n>0;
+}
+
+/* ---------- AJUSTES ---------- */
+function renderCatBox(){
+  var box=$('catBox'); box.replaceChildren();
+  Object.keys(CAT_LABELS).forEach(function(k){
+    box.append(h('label',{class:'fld'},h('span',{text:CAT_LABELS[k]}),h('textarea',{class:'txt','data-cat':k,rows:'6',text:cats[k].join('\n')})));
+  });
+}
+function fillAllSelects(){
+  fillSelect($('prodTipo'),cats.tipo,cats.tipo[0]);
+  fillSelect($('prodLang'),cats.idioma,'Español');
+  fillSelect($('venPay'),cats.pago,cats.pago[0]);
+  fillSelect($('gasPay'),cats.pago,cats.pago[0]);
+  fillSelect($('gasCat'),cats.gasto,cats.gasto[0]);
+}
+function langCodeOf(name){return {'Español':'SP','Inglés':'EN','Japonés':'JP'}[name]||'XX'}
+function setupSettings(){
+  renderCatBox();
+  $('catSave').addEventListener('click',function(){
+    document.querySelectorAll('#catBox textarea').forEach(function(t){
+      var l=t.value.split('\n').map(function(x){return x.trim()}).filter(Boolean);
+      if(l.length)cats[t.dataset.cat]=l;
+    });
+    save(); fillAllSelects(); renderCatBox(); $('catMsg').textContent='Listas guardadas.'; toast('Listas guardadas.');
+  });
+  $('bkExport').addEventListener('click',function(){
+    persist().then(function(){
+      var blob=new Blob([JSON.stringify(snapshot())],{type:'application/json'});
+      var d=new Date(), p=function(n){return String(n).padStart(2,'0')};
+      var a=h('a',{href:URL.createObjectURL(blob),download:'respaldo-tienda-'+d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'.json'});
+      document.body.append(a);a.click();a.remove(); setTimeout(function(){URL.revokeObjectURL(a.href)},4000);
+      $('bkMsg').textContent='Respaldo descargado ('+items.length+' productos, '+sales.length+' ventas, '+purchases.length+' compras, '+expenses.length+' gastos).';
+    });
+  });
+  $('bkImport').addEventListener('change',function(e){
+    var f=e.target.files&&e.target.files[0]; if(!f)return;
+    var r=new FileReader();
+    r.onload=function(){
+      try{
+        var s=JSON.parse(String(r.result));
+        if(!s||!Array.isArray(s.items))throw new Error('formato');
+        if(!window.confirm('Esto reemplaza los datos actuales por el respaldo ('+s.items.length+' productos, '+(s.sales||[]).length+' ventas). ¿Continuar?')){e.target.value='';return}
+        applySnap(s); normalize(); persist().then(function(){fillAllSelects();renderCatBox();renderAll();$('bkMsg').textContent='Respaldo restaurado.';toast('Respaldo restaurado.')});
+      }catch(err){$('bkMsg').textContent='Ese archivo no es un respaldo válido de la tienda.'}
+      e.target.value='';
+    };
+    r.readAsText(f);
+  });
+  $('wipeBtn').addEventListener('click',function(){
+    if(!window.confirm('Se borrarán TODOS los datos de la tienda en este celular (inventario, ventas, compras y gastos). ¿Descargaste un respaldo?'))return;
+    if(!window.confirm('Última confirmación: ¿borrar todo definitivamente?'))return;
+    wipeAll().then(function(){fillAllSelects();renderCatBox();renderAll();toast('Datos borrados.')});
+  });
+  if(navigator.storage&&navigator.storage.persist){
+    navigator.storage.persist().then(function(ok){
+      $('persistInfo').textContent=ok?'Almacenamiento protegido: el navegador no borrará tus datos solo.':'Tip: instala la app para que el navegador no borre tus datos por falta de espacio.';
+    }).catch(function(){});
+  }
+}
+
+/* ---------- instalación ---------- */
+var deferredInstall=null;
+window.addEventListener('beforeinstallprompt',function(e){
+  e.preventDefault(); deferredInstall=e; $('installBtn').hidden=false; $('installTop').hidden=false;
+});
+function doInstall(){
+  if(!deferredInstall)return;
+  deferredInstall.prompt();
+  deferredInstall.userChoice.then(function(){deferredInstall=null;$('installBtn').hidden=true;$('installTop').hidden=true}).catch(function(){});
+}
+window.addEventListener('appinstalled',function(){deferredInstall=null;$('installBtn').hidden=true;$('installTop').hidden=true;toast('App instalada.')});
+
+/* ---------- pestañas ---------- */
+var curView='inv';
+function renderAll(){
+  render(); renderSales(); renderPurchases(); renderExpenses(); renderSummary();
+}
+function showView(v){
+  if(curView==='inv'&&v!=='inv'&&running)pause();
+  curView=v;
+  document.querySelectorAll('.view').forEach(function(s){s.hidden=s.id!=='view-'+v});
+  document.querySelectorAll('#nav button').forEach(function(b){if(b.dataset.v===v)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
+  if(v==='inv')render();else if(v==='ven'){renderSales();venCalc()}else if(v==='com'){renderPurchases();comCalc()}else if(v==='gas')renderExpenses();else if(v==='res')renderSummary();
+  window.scrollTo(0,0);
+}
+
+/* ---------- conexiones de la interfaz ---------- */
+$('nav').addEventListener('click',function(e){var b=e.target.closest('button[data-v]');if(b)showView(b.dataset.v)});
+$('invFilter').addEventListener('input',function(e){invFilter=e.target.value;invLimit=60;render()});
+$('invChips').addEventListener('click',function(e){
+  var b=e.target.closest('.chip');if(!b)return; invState=b.dataset.f; invLimit=60;
+  document.querySelectorAll('#invChips .chip').forEach(function(c){c.setAttribute('aria-pressed',c===b?'true':'false')});
+  render();
+});
+$('moreBtn').addEventListener('click',function(){invLimit+=60;render()});
+$('prodForm').addEventListener('submit',function(e){
+  e.preventDefault();
+  var name=$('prodName').value.trim(); if(!name)return;
+  var tipo=$('prodTipo').value;
+  var it={id:uid(),manual:true,name:name,type:tipo,setCode:'',setName:'',rarity:'N/A',lang:langCodeOf($('prodLang').value),
+    cond:tipo==='Carta suelta'?(prefs.lastCond||DEF_COND):'Sellado',qty:Math.max(0,parseInt($('prodQty').value,10)||0),
+    cost:numOrNull($('prodCost').value),priceMx:numOrNull($('prodPrice').value),minStock:Math.max(0,parseInt($('prodMin').value,10)||0),
+    notes:'',cardId:null,options:[],needsPrint:false,printPrice:0,stores:{},ts:Date.now()};
+  items.push(it); save(); render();
+  $('prodName').value='';$('prodQty').value=1;$('prodCost').value='';$('prodPrice').value='';$('prodMin').value=0;
+  toast('Producto agregado.');
+});
+$('installBtn').addEventListener('click',doInstall);
+$('installTop').addEventListener('click',doInstall);
+window.addEventListener('online',function(){render();fetchFx(false)});
+window.addEventListener('offline',render);
+document.addEventListener('visibilitychange',function(){if(document.hidden)persist()});
+window.addEventListener('pagehide',persist);
+
+function boot(migrated){
+  fillAllSelects(); setupSales(); setupPurchases(); setupExpenses(); setupSettings();
+  render(); renderSales(); renderPurchases(); renderExpenses(); renderSummary();
+  applyDist(); applyConf(); loadPrefixes();
+  fetchFx(false);
+  if(items.some(function(i){return i.cardId})&&Date.now()-(prefs.pricesTs||0)>12*3600e3)setTimeout(refreshPrices,1500);
+  if(migrated){save();toast('Importé el inventario de tu escáner anterior.')}
+  if(location.protocol==='http:'&&location.hostname!=='localhost'&&location.hostname!=='127.0.0.1'){
+    setStatus('La cámara solo funciona desde https o localhost.',true);
+  }
+  window.__ready=true;
+}
+load().then(boot).catch(function(e){console.error(e);cats=clone(DEFAULT_CATS);boot(false)});
+
+})();
+</script>
+<script>
+if('serviceWorker' in navigator&&(location.protocol==='https:'||location.hostname==='localhost'||location.hostname==='127.0.0.1')){
+  window.addEventListener('load',function(){navigator.serviceWorker.register('tienda-sw.js').catch(function(){})});
+}
+</script>
+</body>
+</html>
