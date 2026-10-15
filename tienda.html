@@ -243,7 +243,7 @@ svg.chart{width:100%;height:auto;display:block}
 
 <!-- ===================== INVENTARIO + ESCÁNER ===================== -->
 <section class="view" id="view-cap" aria-label="Captura" hidden>
-  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.14</button>
+  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.16</button>
   <div class="capgrid">
   <section class="cam" aria-label="Cámara">
     <div class="stage" id="stage">
@@ -504,7 +504,7 @@ svg.chart{width:100%;height:auto;display:block}
 (function(){
 'use strict';
 
-var APP_VERSION='2.14';
+var APP_VERSION='2.16';
 var API='https://db.ygoprodeck.com/api/v7/';
 var STORAGE='escaner-cartas-v1';
 var STORE_KEYS=['tcgplayer','cardmarket','ebay','coolstuffinc'];
@@ -512,10 +512,10 @@ var STORE_LABELS={tcgplayer:'TCGplayer',cardmarket:'Cardmarket',ebay:'eBay',cool
 var LANGS=['EN','SP','FR','DE','IT','PT','JP','KR','AE'];
 var CODE_WL='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-';
 var NAME_WL="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 -'.,:!&";
-var BANDS=[[0.68,0.80,0.40,1],[0.62,0.74,0.40,1],[0.60,0.84],[0.52,0.78],[0.68,0.92],[0,1],[0.88,1,0.30,1]];
+var BANDS=[[0.68,0.80,0.40,1],[0.89,0.97,0.03,0.55],[0.62,0.74,0.40,1],[0.88,1,0.30,1],[0.60,0.84],[0.52,0.78],[0.68,0.92],[0,1],[0.88,1,0.30,1]];
 /* [invertir, umbral adaptativo, ignorar zonas] */
 var VARIANTS=[[0,0,1],[0,0,0],[1,0,1],[0,1,1],[1,0,0],[0,1,0],[1,1,1],[1,1,0]];
-var BANDS_NEAR=[[0.68,0.80,0.40,1],[0.5,1],[0.62,0.74,0.40,1],[0.25,0.75],[0,1],[0.7,1],[0.35,0.85],[0.88,1,0.30,1]];
+var BANDS_NEAR=[[0.68,0.80,0.40,1],[0.89,0.97,0.03,0.55],[0.5,1],[0.62,0.74,0.40,1],[0.25,0.75],[0,1],[0.7,1],[0.35,0.85],[0.88,1,0.30,1]];
 var NAME_FAR=[[0.02,0.105],[0.0,0.09],[0.035,0.12],[0.01,0.11]];
 var NAME_NEAR=[[0,0.16],[0.08,0.24],[0.16,0.32],[0.04,0.20],[0.24,0.40],[0.12,0.28]];
 
@@ -795,8 +795,9 @@ function tcgLink(it){return 'https://www.tcgplayer.com/search/yugioh/product?pro
 function money(n){return '$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
 function setStatus(msg,isErr){statusEl.textContent=msg;statusEl.className='status'+(isErr?' err':'')}
+var lastLookups=[];
 function dbgShow(id,cv){try{var d=$(id);d.width=cv.width;d.height=cv.height;d.getContext('2d').drawImage(cv,0,0)}catch(e){}}
-function setDbg(){dbgEl.textContent=(lastCodeRaw||lastNameRaw)?('leí → código: "'+lastCodeRaw.slice(0,60)+'" · nombre: "'+lastNameRaw.slice(0,60)+'"'+(video&&video.videoWidth?' · cámara '+video.videoWidth+'×'+video.videoHeight:'')+(ndb.ready?' · lista de cartas OK':' · ⚠ lista de cartas SIN descargar (Ajustes → Lectura de nombres)')):''}
+function setDbg(){dbgEl.textContent=(lastCodeRaw||lastNameRaw)?('leí → código: "'+lastCodeRaw.slice(0,60)+'" · nombre: "'+lastNameRaw.slice(0,60)+'"'+(video&&video.videoWidth?' · cámara '+video.videoWidth+'×'+video.videoHeight:'')+(lastLookups.length?' · buscó: '+lastLookups.slice(0,6).join(' '):'')+(ndb.ready?' · lista de cartas OK':' · ⚠ lista de cartas SIN descargar (Ajustes → Lectura de nombres)')):''}
 function setGuide(cls){guide.className='guide'+(prefs.dist==='near'?' near':'')+(cls?' '+cls:'')}
 function applyConf(){$('confBtn').textContent=prefs.confirmAll?'Confirmar: todas':'Confirmar: dudosas'}
 function applyDist(){$('stage').classList.toggle('near',prefs.dist==='near');$('distBtn').textContent=prefs.dist==='near'?'Distancia: cerca':'Distancia: lejos';setGuide('')}
@@ -1346,7 +1347,12 @@ function grabRegion(xr0,xr1,yr0,yr1,outW,flip,adapt,mask,target){
   }
   var img=ctx.getImageData(0,0,outW,outH), d=img.data, n=outW*outH;
   var gray=new Uint8ClampedArray(n), hist=new Uint32Array(256), sum=0, i, p;
-  for(i=0,p=0;i<n;i++,p+=4){var g=((d[p]*299+d[p+1]*587+d[p+2]*114)/1000)|0;gray[i]=g;sum+=g;hist[g]++}
+  /* canal con más contraste (letras rojas sobre fondo naranja casi no se ven en gris normal) */
+  var s0=0,s1=0,s2=0,s3=0,q0=0,q1=0,q2=0,q3=0,st=n>60000?4:1;
+  for(i=0,p=0;i<n;i+=st,p+=4*st){var r_=d[p],g_=d[p+1],b_=d[p+2],l_=(r_*299+g_*587+b_*114)/1000;s0+=r_;q0+=r_*r_;s1+=g_;q1+=g_*g_;s2+=b_;q2+=b_*b_;s3+=l_;q3+=l_*l_}
+  var cnt=Math.ceil(n/st), vr=[q0/cnt-Math.pow(s0/cnt,2),q1/cnt-Math.pow(s1/cnt,2),q2/cnt-Math.pow(s2/cnt,2),q3/cnt-Math.pow(s3/cnt,2)];
+  var ch=3, bestV=vr[3]*1.15; for(i=0;i<3;i++)if(vr[i]>bestV){bestV=vr[i];ch=i}
+  for(i=0,p=0;i<n;i++,p+=4){var g=ch===3?((d[p]*299+d[p+1]*587+d[p+2]*114)/1000)|0:d[p+ch];gray[i]=g;sum+=g;hist[g]++}
   var mean=sum/n, lo=pct(hist,n,0.02), hi=pct(hist,n,0.98); if(hi-lo<20)hi=lo+20;
   var invert=(mean<105)!==!!flip, v8=new Uint8ClampedArray(n);
   for(i=0;i<n;i++){var v=(gray[i]-lo)*255/(hi-lo); v=v<0?0:(v>255?255:v); v8[i]=invert?255-v:v}
@@ -1501,13 +1507,13 @@ function codeStep(bi,flip,adapt,mask){
         var rt=extractTokens(r2.data).map(function(t){return {token:t.token,conf:t.conf+4}});
         if(rt.length){lastCodeRaw=lastCodeRaw+' ⇒ '+rt[0].token;toks=rt.concat(toks)}
       }
-      var found=null, chain=Promise.resolve(), tried=0;
-      toks.slice(0,3).forEach(function(tk){
+      var found=null, chain=Promise.resolve(), tried=0; lastLookups=[];
+      toks.slice(0,4).forEach(function(tk){
         snapCandidates(candidateCodes(tk.token),known).slice(0,5).forEach(function(c){
           chain=chain.then(function(){
-            if(found||tried>=8)return;
+            if(found||tried>=12)return;
             tried++;
-            return lookupSet(c).then(function(info){if(info&&!found)found={info:info,conf:tk.conf,token:tk.token}});
+            return lookupSet(c).then(function(info){lastLookups.push(c+(info?'✓':'✗'));if(info&&!found)found={info:info,conf:tk.conf,token:tk.token}}).catch(function(){lastLookups.push(c+'?')});
           });
         });
       });
@@ -1757,7 +1763,7 @@ function scanOnce(){
         }
         return askCode(found);
       }
-      if(n>=2)return askCode(found,true);
+      if(found.conf>=40||n>=2)return askCode(found,true);
       setStatus('Confirmando '+code+'…');
       return;
     }
