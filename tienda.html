@@ -243,7 +243,7 @@ svg.chart{width:100%;height:auto;display:block}
 
 <!-- ===================== INVENTARIO + ESCÁNER ===================== -->
 <section class="view" id="view-cap" aria-label="Captura" hidden>
-  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.16</button>
+  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.18</button>
   <div class="capgrid">
   <section class="cam" aria-label="Cámara">
     <div class="stage" id="stage">
@@ -504,7 +504,7 @@ svg.chart{width:100%;height:auto;display:block}
 (function(){
 'use strict';
 
-var APP_VERSION='2.16';
+var APP_VERSION='2.18';
 var API='https://db.ygoprodeck.com/api/v7/';
 var STORAGE='escaner-cartas-v1';
 var STORE_KEYS=['tcgplayer','cardmarket','ebay','coolstuffinc'];
@@ -1174,10 +1174,33 @@ function rejectAll(){
   clearOptions(); state='scanning'; failTicks=0; weak=0; votes=[]; nameVotes=[];
   setGuide(''); setStatus('Descartada. Sigo buscando; también puedes escribir el código o nombre abajo.');
 }
+/* dígitos que la cámara suele confundir entre sí */
+var DIG_CONF={'0':'869','1':'7','2':'7','3':'85','4':'9','5':'683','6':'850','7':'12','8':'53609','9':'804'};
+function codeVariants(code){
+  var m=String(code).match(/^(.*?)(\d{3})$/), out=[];
+  if(!m)return out;
+  for(var i=0;i<3;i++){
+    var alt=DIG_CONF[m[2][i]]||'';
+    for(var k=0;k<alt.length;k++)out.push(m[1]+m[2].slice(0,i)+alt[k]+m[2].slice(i+1));
+  }
+  return out.filter(function(v,i,a){return a.indexOf(v)===i}).slice(0,10);
+}
 function askCode(found,force){
   if(!prefs.confirmAll&&!force)return acceptCode(found);
-  return loadCard(found.info.id).then(function(card){
-    freeze([{card:card,s:Math.min(1,Math.max(0,found.conf/100)),pick:function(){return acceptCode(found)}}],'¿Es esta carta? (código '+found.info.set_code+')');
+  var sure=found.conf>=94;
+  var altP=sure?Promise.resolve([]):Promise.all(codeVariants(found.info.set_code).map(function(c){return lookupSet(c).catch(function(){return null})}));
+  return altP.then(function(infos){
+    var alts=infos.filter(function(i){return i&&i.id&&i.id!==found.info.id}).slice(0,3);
+    return Promise.all([found.info].concat(alts).map(function(i){return loadCard(i.id).catch(function(){return null})})).then(function(cards){
+      var ents=[];
+      [found.info].concat(alts).forEach(function(info,ix){
+        var card=cards[ix]; if(!card)return;
+        var f=ix===0?found:{info:info,conf:Math.max(30,found.conf-15),token:found.token};
+        ents.push({card:card,s:Math.min(1,Math.max(0,f.conf/100)),pick:function(){return acceptCode(f)}});
+      });
+      if(!ents.length)return;
+      freeze(ents,ents.length>1?'Leí el código '+found.info.set_code+' pero algún dígito puede estar mal. ¿Cuál es?':'¿Es esta carta? (código '+found.info.set_code+')');
+    });
   });
 }
 function commitCard(card){
@@ -1694,7 +1717,7 @@ function nameStep(flip,ni){
     var raw=cleanName(res.data.text); lastNameRaw=raw;
     if(raw.length<4||isTypeLine(raw))return null;
     var local=ndbSearch(raw);
-    if(local.length&&local[0].s>=0.6)return {raw:raw,ranked:local};
+    if(local.length&&local[0].s>=0.5)return {raw:raw,ranked:local};
     var qs=nameQueries(raw), all=[], seen={}, chain=Promise.resolve(), good=false;
     local.forEach(function(r){seen[r.card.id]=1});
     qs.forEach(function(q){
@@ -1754,18 +1777,15 @@ function scanOnce(){
         if(found.conf<94){
           return nameOnce(flip,ni,nr).then(function(r){
             if(r&&r.raw.length>=6&&nameScore(r.raw,found.info.name)<0.4&&r.ranked.length&&r.ranked[0].s>=0.5){
-              votes=[];failTicks++;
-              setStatus('El código y el nombre no coinciden; revisando…');
-              return handleName(r);
+              votes=[];
+              return askCode(found,true);
             }
             return askCode(found);
           });
         }
         return askCode(found);
       }
-      if(found.conf>=40||n>=2)return askCode(found,true);
-      setStatus('Confirmando '+code+'…');
-      return;
+      return askCode(found,true);
     }
     return nameOnce(flip,ni,nr).then(function(r){
       if(!(r&&r.ranked&&r.ranked.length&&r.ranked[0].s>=SUGGEST))r=nameFromLines(lastCodeText)||r;
@@ -1792,9 +1812,9 @@ function handleName(r){
     if(top.s>=0.93||n>=2){failTicks=0;return decide(top)}
     if(weakHit(top.card.id))freeze(r.ranked.filter(function(x){return x.s>=top.s-0.2}).slice(0,3),'¿Es esta carta? (leí "'+r.raw+'")');
     else setStatus('Confirmando "'+top.card.name+'"…');
-  }else if(top.s<SUGGEST&&top.s>=0.55&&(r.ranked.length<3||top.s-r.ranked[2].s>=0.18)){
+  }else if(top.s<SUGGEST&&top.s>=0.50){
     /* lectura sucia pero con 1–2 candidatas claramente por encima del resto: se propone, tú confirmas */
-    if(weakHit(top.card.id))freeze(r.ranked.filter(function(x){return x.s>=top.s-0.2}).slice(0,4),'Lectura dudosa. ¿Es alguna de estas? (leí "'+r.raw+'")');
+    if(weakHit(top.card.id))freeze(r.ranked.filter(function(x){return x.s>=Math.max(0.4,top.s-0.2)}).slice(0,4),'Lectura dudosa. ¿Es alguna de estas? (leí "'+r.raw+'")');
     else setStatus('Leyendo… ('+Math.round(top.s*100)+'% de seguridad)');
   }else if(top.s>=SUGGEST){
     if(weakHit(top.card.id))freeze(r.ranked.slice(0,5),'Seguridad entre 85% y 88%. ¿Es alguna de estas? (leí "'+r.raw+'")');
