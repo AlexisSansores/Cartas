@@ -202,6 +202,10 @@ svg.chart{width:100%;height:auto;display:block}
 .sugg .opts{margin-top:0}
 #opts:not([hidden])~#sugEmpty{display:none}
 @media (min-width:700px){.capgrid{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr)}.capgrid .cam{margin:0;position:sticky;top:64px}.sugg{min-height:200px}}
+.det{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.det polygon{fill:none;stroke:#3ddc84;stroke-width:.8;vector-effect:non-scaling-stroke;stroke-width:3px;stroke-dasharray:10 6}
+#view-cap{position:relative}
+.ver{position:absolute;top:2px;right:10px;z-index:2;font-size:.7rem;font-family:var(--mono);color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:1px 8px}
 </style>
 </head>
 <body>
@@ -237,6 +241,7 @@ svg.chart{width:100%;height:auto;display:block}
 
 <!-- ===================== INVENTARIO + ESCÁNER ===================== -->
 <section class="view" id="view-cap" aria-label="Captura" hidden>
+  <span class="ver" id="verTag" title="Versión de la app">v2.0</span>
   <div class="capgrid">
   <section class="cam" aria-label="Cámara">
     <div class="stage" id="stage">
@@ -245,6 +250,7 @@ svg.chart{width:100%;height:auto;display:block}
         <div class="zone name"><span>nombre</span></div>
         <div class="zone code"><span>código</span></div>
       </div>
+      <svg class="det" id="detSvg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polygon id="detPoly" points=""/></svg>
       <div class="tag" id="tag"></div>
       <div class="start" id="start">
         <strong>Muestra cada carta a la cámara</strong>
@@ -489,6 +495,7 @@ svg.chart{width:100%;height:auto;display:block}
 (function(){
 'use strict';
 
+var APP_VERSION='2.0';
 var API='https://db.ygoprodeck.com/api/v7/';
 var STORAGE='escaner-cartas-v1';
 var STORE_KEYS=['tcgplayer','cardmarket','ebay','coolstuffinc'];
@@ -716,7 +723,7 @@ var openRows={}, invFilter='', invState='all', invLimit=60, _sm=null;
 
 var AUTO=0.88, SUGGEST=0.85;
 var rejected={}, rejSig=null, rejChange=0, weak=0, shownIds=[];
-var stream=null, worker=null, workerN=null, curMode=null, running=false, state='idle', votes=[], nameVotes=[], failTicks=0, lockSig=null, changeCount=0;
+var lastCodeText='', stream=null, worker=null, workerN=null, curMode=null, running=false, state='idle', votes=[], nameVotes=[], failTicks=0, lockSig=null, changeCount=0;
 var setCache=new Map(), cardCache=new Map(), nameCache=new Map(), audioCtx=null, tagTimer=null;
 var lastCodeRaw='', lastNameRaw='';
 var work=document.createElement('canvas'), sigCv=document.createElement('canvas'), zoomCv=document.createElement('canvas'), workN=document.createElement('canvas'), tightCv=document.createElement('canvas'), thumbCv=document.createElement('canvas');
@@ -1156,6 +1163,121 @@ function commitCard(card){
 }
 
 /* ---------- cámara ---------- */
+/* ---------- detección automática de la carta ---------- */
+var detCv=document.createElement('canvas'), detTmp=document.createElement('canvas'), detTmp2=document.createElement('canvas'), curGeo=null, srcEl=null;
+/* Detección del contorno de la carta (3 lados visibles basta): líneas casi verticales/horizontales por Hough */
+function detectCard(gray,W,H){
+  var n=W*H, gx=new Int16Array(n), gy=new Int16Array(n), mag=new Uint16Array(n), x, y, i;
+  for(y=1;y<H-1;y++)for(x=1;x<W-1;x++){
+    i=y*W+x;
+    var a=gray[i-W-1],b=gray[i-W],c=gray[i-W+1],d=gray[i-1],f=gray[i+1],g=gray[i+W-1],h=gray[i+W],k=gray[i+W+1];
+    var sx=(c+2*f+k)-(a+2*d+g), sy=(g+2*h+k)-(a+2*b+c);
+    gx[i]=sx; gy[i]=sy; mag[i]=Math.abs(sx)+Math.abs(sy);
+  }
+  var hist=new Uint32Array(2048); for(i=0;i<n;i++)hist[Math.min(2047,mag[i])]++;
+  var acc=0,thr=0,target=n*0.88; for(i=0;i<2048;i++){acc+=hist[i];if(acc>=target){thr=i;break}} thr=Math.max(60,thr);
+  var edge=new Uint8Array(n); for(i=0;i<n;i++)if(mag[i]>=thr)edge[i]=1;
+  var NA=19, ANG=[], t; for(t=0;t<NA;t++)ANG.push((t-9)*2*Math.PI/180);
+  var OFF=Math.ceil(H*0.35)+2, VA=W+2*OFF, HA=H+2*Math.ceil(W*0.35)+4, OFH=Math.ceil(W*0.35)+2;
+  var accV=new Float32Array(NA*VA), accH=new Float32Array(NA*HA);
+  for(y=1;y<H-1;y++)for(x=1;x<W-1;x++){
+    i=y*W+x; if(!edge[i])continue;
+    var ax=Math.abs(gx[i]), ay=Math.abs(gy[i]), w=mag[i];
+    if(ax>=ay*0.6){for(t=0;t<NA;t++){var v=Math.round(x-y*Math.tan(ANG[t]))+OFF;if(v>=0&&v<VA)accV[t*VA+v]+=w}}
+    if(ay>=ax*0.6){for(t=0;t<NA;t++){var u=Math.round(y-x*Math.tan(ANG[t]))+OFH;if(u>=0&&u<HA)accH[t*HA+u]+=w}}
+  }
+  function peaks(acc,NW,off,max){
+    var list=[],q,s;
+    for(t=0;t<NA;t++)for(q=2;q<NW-2;q++){
+      var v=acc[t*NW+q]+0.5*(acc[t*NW+q-1]+acc[t*NW+q+1]); if(v>0)list.push({t:t,p:q-off,v:v});
+    }
+    list.sort(function(a,b){return b.v-a.v});
+    var out=[];
+    for(q=0;q<list.length&&out.length<max;q++){
+      var c=list[q],dup=false;
+      for(s=0;s<out.length;s++)if(Math.abs(out[s].p-c.p)<4&&Math.abs(out[s].t-c.t)<=2){dup=true;break}
+      if(!dup)out.push(c);
+    }
+    return out;
+  }
+  var V=peaks(accV,VA,OFF,12).filter(function(l){var xm=l.p+Math.tan(ANG[l.t])*H/2;return xm>=5&&xm<=W-5});
+  var Hh=peaks(accH,HA,OFH,12).filter(function(l){var ym=l.p+Math.tan(ANG[l.t])*W/2;return ym>=4&&ym<=H-4});
+  function support(x0,y0,x1,y1,horiz){
+    var steps=Math.max(12,Math.round(Math.hypot(x1-x0,y1-y0)/2)), hit=0,tot=0,s;
+    for(s=0;s<=steps;s++){
+      var px=x0+(x1-x0)*s/steps, py=y0+(y1-y0)*s/steps;
+      if(px<1||py<1||px>W-2||py>H-2)continue;
+      tot++;
+      var ok=false,dx,dy;
+      for(dy=-1;dy<=1&&!ok;dy++)for(dx=-1;dx<=1;dx++){
+        var j=(Math.round(py)+dy)*W+Math.round(px)+dx;
+        if(edge[j]&&(horiz?Math.abs(gy[j])>=Math.abs(gx[j])*0.5:Math.abs(gx[j])>=Math.abs(gy[j])*0.5)){ok=true;break}
+      }
+      if(ok)hit++;
+    }
+    return {f:tot?hit/tot:0,tot:tot,len:Math.hypot(x1-x0,y1-y0)};
+  }
+  var best=null, ASP=0.686;
+  var vi,vj,hi;
+  for(vi=0;vi<V.length;vi++)for(vj=0;vj<V.length;vj++){
+    var L=V[vi],R=V[vj]; if(L===R)continue;
+    var tl=Math.tan(ANG[L.t]),tr=Math.tan(ANG[R.t]);
+    if(Math.abs(L.t-R.t)>3)continue;
+    for(hi=0;hi<Hh.length;hi++){
+      var T=Hh[hi], tt=Math.tan(ANG[T.t]);
+      /* esquina = intersección: x=a+y*tl ; y=b+x*tt */
+      function inter(P,tp){var a=P.p,den=1-tp*tt;var xx=(a+tp*(T.p))/den, yy=T.p+xx*tt;return [xx,yy]}
+      var C1=inter(L,tl), C2=inter(R,tr);
+      if(C2[0]-C1[0]<W*0.18)continue;
+      var wd=Math.hypot(C2[0]-C1[0],C2[1]-C1[1]);
+      if(wd>W*1.05||wd<W*0.2)continue;
+      var ht=wd/ASP;
+      var ux=-tt,uy=1; var ul=Math.hypot(ux,uy); ux/=ul;uy/=ul;   /* hacia abajo, perpendicular a la línea superior */
+      var B1=[C1[0]+ux*ht,C1[1]+uy*ht], B2=[C2[0]+ux*ht,C2[1]+uy*ht];
+      var sL=support(C1[0],C1[1],B1[0],B1[1],false), sR=support(C2[0],C2[1],B2[0],B2[1],false), sT=support(C1[0],C1[1],C2[0],C2[1],true), sB=support(B1[0],B1[1],B2[0],B2[1],true);
+      if(sT.tot<8||sL.tot<H*0.22||sR.tot<H*0.22)continue;   /* los lados visibles deben ser largos */
+      var fB=sB.tot<6?0.55:sB.f;
+      if(sL.f<0.45||sR.f<0.45||sT.f<0.4)continue;
+      var size=wd/W, sc=(sL.f+sR.f+sT.f+fB)/4*(0.45+0.55*Math.min(1,size*1.4));
+      if(!best||sc>best.score)best={score:sc,tl:C1,tr:C2,bl:B1,br:B2,w:wd,h:ht,angle:Math.atan2(C2[1]-C1[1],C2[0]-C1[0]),f:[sL.f,sR.f,sT.f,fB]};
+    }
+  }
+  return best&&best.score>=0.5?best:null;
+}
+function srcDims(){var e=srcEl||video;return {e:e,w:e.videoWidth||e.width,h:e.videoHeight||e.height}}
+function detectNow(){
+  var sd=srcDims(), vw=sd.w, vh=sd.h; if(!vw||!vh)return null;
+  var W=200,H=Math.max(40,Math.round(vh*W/vw)); detCv.width=W; detCv.height=H;
+  var c=detCv.getContext('2d',{willReadFrequently:true});
+  /* reducción por mitades: promedia áreas y no pierde bordes finos */
+  var cur=sd.e, cw=vw, ch=vh, flip=0;
+  while(cw>W*2){
+    var nw=Math.round(cw/2), nh=Math.round(ch/2), dst=flip?detTmp2:detTmp;
+    dst.width=nw; dst.height=nh; dst.getContext('2d').drawImage(cur,0,0,nw,nh);
+    cur=dst; cw=nw; ch=nh; flip^=1;
+  }
+  c.drawImage(cur,0,0,W,H);
+  var d=c.getImageData(0,0,W,H).data, g=new Uint8Array(W*H), i, p;
+  for(i=0,p=0;i<g.length;i++,p+=4)g[i]=(d[p]*299+d[p+1]*587+d[p+2]*114)/1000;
+  var r=detectCard(g,W,H); if(!r)return null;
+  var k=vw/W, cs=Math.cos(r.angle), sn=Math.sin(r.angle);
+  var w=r.w*k, hh=r.h*k;
+  /* centro de la carta a partir de la esquina superior izquierda */
+  var cx=r.tl[0]*k+(w/2)*cs-(hh/2)*sn, cy=r.tl[1]*k+(w/2)*sn+(hh/2)*cs;
+  return {cx:cx,cy:cy,w:w,h:hh,ang:r.angle,score:r.score};
+}
+function farStyle(){return !!curGeo||prefs.dist!=='near'}
+function showDetected(g){
+  var poly=$('detPoly'); if(!poly)return;
+  if(!g||!video.videoWidth){poly.setAttribute('points','');return}
+  var vr=video.getBoundingClientRect(), vw=video.videoWidth, vh=video.videoHeight;
+  var scale=Math.max(vr.width/vw,vr.height/vh), offX=(vr.width-vw*scale)/2, offY=(vr.height-vh*scale)/2;
+  var cs=Math.cos(g.ang), sn=Math.sin(g.ang), pts=[[-.5,-.5],[.5,-.5],[.5,.5],[-.5,.5]].map(function(q){
+    var x=g.cx+q[0]*g.w*cs-q[1]*g.h*sn, y=g.cy+q[0]*g.w*sn+q[1]*g.h*cs;
+    return ((x*scale+offX)/vr.width*100).toFixed(2)+','+((y*scale+offY)/vr.height*100).toFixed(2);
+  });
+  poly.setAttribute('points',pts.join(' '));
+}
 function guideInVideo(){
   var vr=video.getBoundingClientRect(), gr=guide.getBoundingClientRect();
   var vw=video.videoWidth, vh=video.videoHeight;
@@ -1176,13 +1298,26 @@ var IGNORE_ZONES=[
 ];
 function grabRegion(xr0,xr1,yr0,yr1,outW,flip,adapt,mask,target){
   var wk=target||work;
-  var r=guideInVideo();
-  var sx=r.x+r.w*xr0, sw=r.w*(xr1-xr0), sy=r.y+r.h*yr0, sh=r.h*(yr1-yr0);
-  var outH=Math.max(1,Math.round(sh*outW/sw));
-  wk.width=outW; wk.height=outH;
-  var ctx=wk.getContext('2d',{willReadFrequently:true});
-  ctx.imageSmoothingQuality='high';
-  ctx.drawImage(video,sx,sy,sw,sh,0,0,outW,outH);
+  var geo=curGeo, sd=srcDims(), sx, sw, sy, sh, outH, ctx;
+  if(geo){
+    sw=geo.w*(xr1-xr0); sh=geo.h*(yr1-yr0);
+    outH=Math.max(1,Math.round(sh*outW/sw));
+    wk.width=outW; wk.height=outH;
+    ctx=wk.getContext('2d',{willReadFrequently:true});
+    ctx.imageSmoothingQuality='high'; ctx.fillStyle='#808080'; ctx.fillRect(0,0,outW,outH);
+    var mx=((xr0+xr1)/2-0.5)*geo.w, my=((yr0+yr1)/2-0.5)*geo.h, cs=Math.cos(geo.ang), sn=Math.sin(geo.ang);
+    var vx=geo.cx+mx*cs-my*sn, vy=geo.cy+mx*sn+my*cs;
+    ctx.save(); ctx.scale(outW/sw,outH/sh); ctx.translate(sw/2,sh/2); ctx.rotate(-geo.ang); ctx.translate(-vx,-vy);
+    ctx.drawImage(sd.e,0,0); ctx.restore();
+  }else{
+    var r=guideInVideo();
+    sx=r.x+r.w*xr0; sw=r.w*(xr1-xr0); sy=r.y+r.h*yr0; sh=r.h*(yr1-yr0);
+    outH=Math.max(1,Math.round(sh*outW/sw));
+    wk.width=outW; wk.height=outH;
+    ctx=wk.getContext('2d',{willReadFrequently:true});
+    ctx.imageSmoothingQuality='high';
+    ctx.drawImage(sd.e,sx,sy,sw,sh,0,0,outW,outH);
+  }
   var img=ctx.getImageData(0,0,outW,outH), d=img.data, n=outW*outH;
   var gray=new Uint8ClampedArray(n), hist=new Uint32Array(256), sum=0, i, p;
   for(i=0,p=0;i<n;i++,p+=4){var g=((d[p]*299+d[p+1]*587+d[p+2]*114)/1000)|0;gray[i]=g;sum+=g;hist[g]++}
@@ -1328,10 +1463,10 @@ function refine(res){
   return ocr(zoomCv,'line').then(function(r2){return r2}).catch(function(){return null});
 }
 function codeStep(bi,flip,adapt,mask){
-  var B=prefs.dist==='near'?BANDS_NEAR:BANDS, b=B[bi%B.length], whole=(b[1]-b[0])>0.9;
+  var B=farStyle()?BANDS:BANDS_NEAR, b=B[bi%B.length], whole=(b[1]-b[0])>0.9;
   var cv=grabRegion(0,1,b[0],b[1],whole?1400:1100,flip,adapt,mask);
   return ocr(cv,'code').then(function(res){
-    lastCodeRaw=String(res.data.text||'').replace(/\s+/g,' ').trim();
+    lastCodeRaw=String(res.data.text||'').replace(/\s+/g,' ').trim(); lastCodeText=String(res.data.text||'');
     var toks=extractTokens(res.data);
     return refine(res).then(function(r2){
       if(r2&&r2.data){
@@ -1468,10 +1603,10 @@ function ndbDownload(force){
     return idbSet('names',{ts:ndb.ts,rows:rows});
   }).catch(function(e){ndb.msg='No se pudo descargar la lista de cartas ('+((e&&e.message)||e)+'). Se reintentará.'}).then(function(){ndb.busy=false;ndbUi()});
 }
-window.__tienda={ndbBuild:ndbBuild,ndbSearch:ndbSearch,tightLine:tightLine};
+window.__tienda={ndbBuild:ndbBuild,ndbSearch:ndbSearch,tightLine:tightLine,detectNow:detectNow,setSrc:function(e){srcEl=e},setGeo:function(g){curGeo=g},grab:function(a,b,c,d,w,f,ad,m){return grabRegion(a,b,c,d,w,f,ad,m,workN)}};
 function nameStep(flip,ni){
   var cv;
-  if(prefs.dist==='near'){var nb=NAME_NEAR[ni%NAME_NEAR.length];cv=grabRegion(0.04,0.96,nb[0],nb[1],1100,flip,0,0,workN)}
+  if(!farStyle()){var nb=NAME_NEAR[ni%NAME_NEAR.length];cv=grabRegion(0.04,0.96,nb[0],nb[1],1100,flip,0,0,workN)}
   else cv=grabRegion(0.03,0.83,0.02,0.105,1000,flip,0,0,workN);
   if(ni%2===0){var t=null;try{t=tightLine(cv,tightCv)}catch(e){}if(t)cv=t}   /* lectura alterna: recortada y sin recortar */
   return ocrName(cv).then(function(res){
@@ -1496,12 +1631,25 @@ function nameStep(flip,ni){
     });
   });
 }
+/* el nombre también puede venir en el texto de la pasada del código (en mayúsculas): se compara línea por línea con la base local */
+function nameFromLines(text){
+  if(!ndb.ready)return null;
+  var best=null;
+  String(text||'').split(/\n/).forEach(function(l){
+    var raw=cleanName(l); if(raw.replace(/[^A-Za-z]/g,'').length<8||isTypeLine(raw))return;
+    var r=ndbSearch(raw); if(r.length&&r[0].s>=0.9&&(!best||r[0].s>best.ranked[0].s))best={raw:raw,ranked:r};
+  });
+  return best;
+}
 function nameOnce(flip,ni,pre){return pre!==undefined?Promise.resolve(pre):nameStep(flip,ni)}
 function scanOnce(){
   if(video.readyState<2||!video.videoWidth)return sleep(120);
   if(rejSig){var dd=sigDiff(rejSig); rejChange=dd>30?rejChange+1:0; if(rejChange>=2){rejected={};rejSig=null;rejChange=0}}
-  var nb=prefs.dist==='near'?BANDS_NEAR.length:BANDS.length, bi=failTicks%nb, vr=VARIANTS[Math.floor(failTicks/nb)%VARIANTS.length];
-  var flip=vr[0], adapt=vr[1], mask=vr[2]&&prefs.dist!=='near', ni=failTicks;
+  /* ¿dónde está la carta? Si se detecta, las zonas se calculan sobre la carta real y no sobre el marco */
+  var gd=null; try{gd=detectNow()}catch(e){}
+  curGeo=(gd&&gd.score>=0.55&&failTicks%4!==3)?gd:null; showDetected(curGeo);
+  var nb=farStyle()?BANDS.length:BANDS_NEAR.length, bi=failTicks%nb, vr=VARIANTS[Math.floor(failTicks/nb)%VARIANTS.length];
+  var flip=vr[0], adapt=vr[1], mask=vr[2]&&farStyle(), ni=failTicks;
   var sh=frameSharp(); sharpMax=Math.max(sh,sharpMax*0.97);
   if(sh<sharpMax*0.6&&blurSkips<2){blurSkips++;setStatus('Imagen borrosa: espera a que enfoque o aleja un poco la carta.');return sleep(110)}
   blurSkips=0;
@@ -1538,6 +1686,7 @@ function scanOnce(){
       return;
     }
     return nameOnce(flip,ni,nr).then(function(r){
+      if(!(r&&r.ranked&&r.ranked.length&&r.ranked[0].s>=SUGGEST))r=nameFromLines(lastCodeText)||r;
       setDbg();
       failTicks++;
       return handleName(r);
@@ -1586,7 +1735,7 @@ function loop(){
     p.then(tick);
   })();
 }
-function pause(){running=false;state='scanning';setGuide('');$('pauseBtn').textContent='Reanudar';setStatus('Lectura en pausa.')}
+function pause(){running=false;state='scanning';curGeo=null;try{showDetected(null)}catch(e){}setGuide('');$('pauseBtn').textContent='Reanudar';setStatus('Lectura en pausa.')}
 function camAlive(){var t=stream&&stream.getVideoTracks()[0];return !!(t&&t.readyState==='live'&&!t.muted&&video.srcObject===stream&&video.videoWidth>0)}
 function ensureCamera(){
   if(camAlive()){return video.paused?video.play().then(function(){return true},function(){return false}):Promise.resolve(true)}
@@ -2258,7 +2407,7 @@ function boot(migrated){
   fillAllSelects(); setupSales(); setupPurchases(); setupExpenses(); setupSettings();
   render(); renderSales(); renderPurchases(); renderExpenses(); renderSummary(); renderHome(); showView('hom');
   applyDist(); applyConf(); loadPrefixes();
-  fetchFx(false); syncWiring(); syncInit(); ndbLoad(); $('ndbBtn').addEventListener('click',function(){ndbDownload(true)});
+  if($('verTag'))$('verTag').textContent='v'+APP_VERSION; fetchFx(false); syncWiring(); syncInit(); ndbLoad(); $('ndbBtn').addEventListener('click',function(){ndbDownload(true)});
   if(items.some(function(i){return i.cardId})&&Date.now()-(prefs.pricesTs||0)>12*3600e3)setTimeout(refreshPrices,1500);
   if(migrated){save();toast('Importé el inventario de tu escáner anterior.')}
   if(location.protocol==='http:'&&location.hostname!=='localhost'&&location.hostname!=='127.0.0.1'){
