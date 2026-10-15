@@ -55,6 +55,7 @@ video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .tag.on{display:block}
 .tag.ok{background:rgba(10,110,55,.92)}
 .tag b{display:block;font-size:1rem}
+.tag .undo{display:block;margin-top:6px;border:1px solid rgba(255,255,255,.7);background:rgba(255,255,255,.14);color:#fff;border-radius:8px;min-height:38px;padding:0 12px;font-size:.88rem;cursor:pointer}
 .tag .sub{font-family:var(--mono);font-size:.78rem;opacity:.9}
 .start{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:20px;text-align:center;color:#fff;background:#12141f}
 .start p{margin:0;max-width:36ch;font-size:.9rem;color:#c9cde4}
@@ -245,7 +246,7 @@ svg.chart{width:100%;height:auto;display:block}
 
 <!-- ===================== INVENTARIO + ESCÁNER ===================== -->
 <section class="view" id="view-cap" aria-label="Captura" hidden>
-  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.29</button>
+  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.31</button>
   <div class="capgrid">
   <section class="cam" aria-label="Cámara">
     <div class="stage" id="stage">
@@ -512,7 +513,7 @@ svg.chart{width:100%;height:auto;display:block}
 (function(){
 'use strict';
 
-var APP_VERSION='2.29';
+var APP_VERSION='2.31';
 var API='https://db.ygoprodeck.com/api/v7/';
 var STORAGE='escaner-cartas-v1';
 var STORE_KEYS=['tcgplayer','cardmarket','ebay','coolstuffinc'];
@@ -526,7 +527,7 @@ var VARIANTS=[[0,0,1],[0,0,0],[1,0,1],[0,1,1],[1,0,0],[0,1,0],[1,1,1],[1,1,0]];
 var BANDS_FIT=[[0.672,0.735,0.45,0.97],[0.69,0.76,0.45,0.97],[0.65,0.78,0.30,1],[0.707,0.765,0.45,0.97],[0.62,0.85,0.20,1],[0.89,0.97,0.03,0.55],[0.62,0.74,0.40,1],[0.88,1,0.30,1],[0.60,0.84],[0.68,0.92]];
 var BANDS_NEAR=[[0.675,0.73,0.50,1],[0.68,0.80,0.40,1],[0.89,0.97,0.03,0.55],[0.5,1],[0.62,0.74,0.40,1],[0.25,0.75],[0,1],[0.7,1],[0.35,0.85],[0.88,1,0.30,1]];
 var NAME_FAR=[[0.02,0.105],[0.0,0.09],[0.035,0.12],[0.01,0.11]];
-var NAME_FIT=[[0.04,0.125],[0.02,0.105],[0.055,0.14],[0.0,0.09]];
+var NAME_FIT=[[0.04,0.125],[0,0.21],[0.065,0.15],[0.08,0.22],[0.02,0.105],[0.1,0.2]];
 var NAME_NEAR=[[0,0.16],[0.08,0.24],[0.16,0.32],[0.04,0.20],[0.24,0.40],[0.12,0.28]];
 
 // <pure>
@@ -966,14 +967,36 @@ function baseFromCard(card){
 
 /* ---------- inventario ---------- */
 function keyOf(it){return (it.setCode||('#'+it.cardId))+'|'+it.rarity+'|'+(it.cond||DEF_COND)}
-var capAdds=0;
+var capAdds=0, lastAdd=null;
 function addItem(base){
   capAdds++; if($('capCount'))$('capCount').textContent=capAdds+' carta'+(capAdds===1?'':'s')+' agregada'+(capAdds===1?'':'s')+' en esta sesión';
   var probe=Object.assign({},base,{cond:prefs.lastCond||DEF_COND});
   var found=items.filter(function(i){return !i.manual&&keyOf(i)===keyOf(probe)})[0];
-  if(found){found.qty++;found.ts=Date.now();found.stores=base.stores;if(!found.needsPrint)found.printPrice=base.printPrice;save();render();return found}
+  if(found){lastAdd={it:found,isNew:false};found.qty++;found.ts=Date.now();found.stores=base.stores;if(!found.needsPrint)found.printPrice=base.printPrice;save();render();return found}
   var it=Object.assign({id:uid(),qty:1,ts:Date.now(),cond:prefs.lastCond||DEF_COND,cost:null,priceMx:null,minStock:0,notes:'',type:'Carta suelta'},base);
+  lastAdd={it:it,isNew:true};
   items.push(it); save(); render(); return it;
+}
+/* quitar un producto del inventario (si se agregó por error, no hace falta ponerle cero) */
+function removeItem(it,ask){
+  var m=movesOf(it);
+  var msg='¿Quitar «'+it.name+'» del inventario?'+((m.i||m.o)?' Tiene compras o ventas registradas: se conservan en sus listas.':'');
+  if(ask!==false&&!window.confirm(msg))return false;
+  items=items.filter(function(i){return i!==it});save();render();
+  if(typeof toast==='function')toast('Quitada: '+it.name);
+  return true;
+}
+/* deshacer lo último que agregó el escáner */
+function undoLastAdd(){
+  var a=lastAdd; if(!a||!a.it)return;
+  lastAdd=null;
+  if(items.indexOf(a.it)<0){hideTag();return}
+  if(a.isNew||(a.it.qty||0)<=0){items=items.filter(function(i){return i!==a.it})}
+  else a.it.qty--;
+  save();render();hideTag();
+  if(capAdds>0){capAdds--;if($('capCount'))$('capCount').textContent=capAdds+' carta'+(capAdds===1?'':'s')+' agregada'+(capAdds===1?'':'s')+' en esta sesión'}
+  if(typeof setStatus==='function')setStatus('Se deshizo: '+a.it.name+'.');
+  if(typeof toast==='function')toast('Se deshizo: '+a.it.name);
 }
 function applyOption(it,idx){
   var o=it.options[idx]; if(!o)return;
@@ -1048,10 +1071,7 @@ function fillDetails(d,it){
   d.append(h('div',{class:'form'},
     field('Condición',cond),field('Tipo',tipo),field('Costo unitario (MXN)',cost),field('Precio de venta (MXN)',pr),field('Stock mínimo',mn),field('Notas',nt)),
     h('div',{class:'note',style:'margin-top:6px',text:'Stock: '+(it.qty||0)+' inicial + '+m.i+' compras − '+m.o+' ventas = '+stockOf(it)}),
-    h('button',{class:'rm',type:'button',text:'Quitar del inventario',onclick:function(){
-      if((m.i||m.o)&&!window.confirm('Este producto tiene compras o ventas registradas (se conservan en sus listas). ¿Quitarlo del inventario?'))return;
-      items=items.filter(function(i){return i!==it});save();render();
-    }}));
+    h('button',{class:'rm',type:'button',text:'Quitar del inventario',onclick:function(){removeItem(it)}}));
 }
 function rowFor(it){
   var stock=stockOf(it), v=itemValue(it,prefs.basis), opts=it.options||[], rar;
@@ -1083,6 +1103,7 @@ function rowFor(it){
   var sa=storeAvg(it.stores);
   if(it.printPrice>0||parts.length)row.append(h('div',{class:'breakdown',text:(it.printPrice>0?'Impresión '+money(it.printPrice):'Impresión s/d')+' · Promedio tiendas '+(sa?money(sa):'s/d')+(parts.length?' ('+parts.join(' · ')+')':'')}));
   if(!it.manual)row.append(h('a',{class:'tcg',href:tcgLink(it),target:'_blank',rel:'noopener noreferrer',text:'Ver en TCGplayer ↗'}));
+  row.append(h('button',{class:'rm delrow',type:'button','aria-label':'Quitar '+it.name+' del inventario',text:'🗑 Quitar',onclick:function(){removeItem(it)}}));
   row.append(detailsFor(it));
   return row;
 }
@@ -1218,7 +1239,7 @@ function commitCard(card){
   if(card&&card._stub)return loadCard(card.id).then(commitCard).catch(function(){setStatus('No se pudo cargar la carta. Revisa tu conexión.',true)});
   var base=baseFromCard(card), it=addItem(base);
   beep(); clearOptions();
-  showTag([h('b',{text:'✓ '+it.name}),h('span',{class:'sub',text:(base.needsPrint?'Elige la impresión en la lista':it.setCode+' · '+it.rarity)+' · ×'+it.qty})],true,running?0:2500);
+  showTag([h('b',{text:'✓ '+it.name}),h('span',{class:'sub',text:(base.needsPrint?'Elige la impresión en la lista':it.setCode+' · '+it.rarity)+' · ×'+it.qty}),h('button',{class:'undo',type:'button',text:'↩ Deshacer (no es esta)',onclick:function(e){e.stopPropagation();if(typeof undoLastAdd==='function')undoLastAdd()}})],true,running?0:6000);
   setStatus(running?'Agregada por nombre. Retira la carta para la siguiente.':'Agregada.');
   if(running&&video.videoWidth&&state!=='idle'){lock();setGuide('ok')}
 }
@@ -1503,7 +1524,7 @@ function acceptCode(found){
     lock(); setGuide('ok');
     var multi=base.options.length>1;
     var v=itemValue(it,prefs.basis);
-    showTag([h('b',{text:'✓ '+it.name}),h('span',{class:'sub',text:it.setCode+' · '+it.rarity+(multi?' (revisa la rareza en la lista)':'')+' · ×'+it.qty+(v>0?' · '+money(v):'')})],true,0);
+    showTag([h('b',{text:'✓ '+it.name}),h('span',{class:'sub',text:it.setCode+' · '+it.rarity+(multi?' (revisa la rareza en la lista)':'')+' · ×'+it.qty+(v>0?' · '+money(v):'')}),h('button',{class:'undo',type:'button',text:'↩ Deshacer (no es esta)',onclick:function(e){e.stopPropagation();if(typeof undoLastAdd==='function')undoLastAdd()}})],true,0);
     setStatus('Identificada por código. Retira la carta para la siguiente.');
   });
 }
@@ -1735,7 +1756,7 @@ function ocrNameBoth(cv){
 function nameStep(flip,ni){
   var cv; lastNameRect=null;
   if(!farStyle()){var nb=NAME_NEAR[ni%NAME_NEAR.length];cv=grabRegion(0.05,0.83,nb[0],nb[1],1800,flip,0,0,workN);lastNameRect=[nb[0],nb[1],0.05,0.83]}
-  else{var nf=(useFit?NAME_FIT:NAME_FAR)[Math.floor(ni/2)%NAME_FAR.length];cv=grabRegion(0.05,0.83,nf[0],nf[1],1800,flip,0,0,workN);lastNameRect=[nf[0],nf[1],0.05,0.83]}
+  else{var nl=useFit?NAME_FIT:NAME_FAR, nf=nl[Math.floor(ni/2)%nl.length];cv=grabRegion(0.05,0.83,nf[0],nf[1],1800,flip,0,0,workN);lastNameRect=[nf[0],nf[1],0.05,0.83]}
   if(ni%2===0){var t=null;try{t=tightLine(cv,tightCv)}catch(e){}if(t)cv=t}   /* lectura alterna: recortada y sin recortar */
   dbgShow('dbgName',cv);
   return ocrNameBoth(cv).then(function(res){
@@ -2169,7 +2190,7 @@ $('manualForm').addEventListener('submit',function(e){
     if(found){
       return buildFromCode(found.info,detectLang(found.token)).then(function(base){
         var it=addItem(base); beep(); clearOptions();
-        showTag([h('b',{text:'✓ '+it.name}),h('span',{class:'sub',text:it.setCode+' · '+it.rarity+' · ×'+it.qty})],true,2500);
+        showTag([h('b',{text:'✓ '+it.name}),h('span',{class:'sub',text:it.setCode+' · '+it.rarity+' · ×'+it.qty}),h('button',{class:'undo',type:'button',text:'↩ Deshacer (no es esta)',onclick:function(e){e.stopPropagation();if(typeof undoLastAdd==='function')undoLastAdd()}})],true,6000);
         setStatus('Agregada.'); $('manualIn').value='';
         if(running&&video.videoWidth&&state!=='idle'){lock();setGuide('ok')}
       });
