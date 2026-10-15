@@ -245,7 +245,7 @@ svg.chart{width:100%;height:auto;display:block}
 
 <!-- ===================== INVENTARIO + ESCÁNER ===================== -->
 <section class="view" id="view-cap" aria-label="Captura" hidden>
-  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.25</button>
+  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.26</button>
   <div class="capgrid">
   <section class="cam" aria-label="Cámara">
     <div class="stage" id="stage">
@@ -512,7 +512,7 @@ svg.chart{width:100%;height:auto;display:block}
 (function(){
 'use strict';
 
-var APP_VERSION='2.25';
+var APP_VERSION='2.26';
 var API='https://db.ygoprodeck.com/api/v7/';
 var STORAGE='escaner-cartas-v1';
 var STORE_KEYS=['tcgplayer','cardmarket','ebay','coolstuffinc'];
@@ -1764,7 +1764,7 @@ var ZP={x0:-0.15,x1:1.15,y0:-0.10,y1:1.10,w:700}, zoneCv=document.createElement(
 function zoneFit(cv){
   var W=cv.width,H=cv.height,d=cv.getContext('2d',{willReadFrequently:true}).getImageData(0,0,W,H).data,a=new Uint8Array(W*H),i,t=28;
   for(i=0;i<W*H;i++)a[i]=d[i*4];
-  var xa=Math.round(.38*W),xb=Math.round(.62*W),xc=W/2,best=null,ths=[-4,-2,0,2,4];
+  var xa=Math.round(.38*W),xb=Math.round(.62*W),xc=W/2,best=null,ths=[-6,-4.5,-3,-1.5,0,1.5,3,4.5,6];
   function maxpool(v){var o=new Float32Array(v.length),k,j;for(j=0;j<v.length;j++){var m=0;for(k=-3;k<=3;k++){var q=j+k;if(q>=0&&q<v.length&&v[q]>m)m=v[q]}o[j]=m}return o}
   ths.forEach(function(th){
     var tn=Math.tan(th*Math.PI/180),R=new Float32Array(H),y,x;
@@ -1789,7 +1789,7 @@ function zoneFit(cv){
 function zoneGeo(f,base){
   var uc=ZP.x0+((f.x0+f.W/2)/f.cw)*(ZP.x1-ZP.x0), vc=ZP.y0+((f.y0+f.H/2)/f.ch)*(ZP.y1-ZP.y0);
   var dx=(uc-0.5)*base.w, dy=(vc-0.5)*base.h, cs=Math.cos(base.ang), sn=Math.sin(base.ang);
-  return {cx:base.cx+dx*cs-dy*sn, cy:base.cy+dx*sn+dy*cs, w:f.W/f.cw*(ZP.x1-ZP.x0)*base.w*1.03, h:f.H/f.ch*(ZP.y1-ZP.y0)*base.h*1.03, ang:base.ang-f.th*Math.PI/180, score:1};
+  return {cx:base.cx+dx*cs-dy*sn, cy:base.cy+dx*sn+dy*cs, w:f.W/f.cw*(ZP.x1-ZP.x0)*base.w*1.03, h:f.H/f.ch*(ZP.y1-ZP.y0)*base.h*1.03, ang:base.ang+f.th*Math.PI/180, score:1};
 }
 function zoneAdjust(){
   /* parte del marco (manual o guía) o de la carta detectada; si la plantilla encaja bien, la geometría se corrige */
