@@ -197,6 +197,11 @@ svg.chart{width:100%;height:auto;display:block}
   .cell::before{display:none}.cell.cn{grid-column:auto}
   .cell.qty{width:104px}
 }
+.capgrid{max-width:1120px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:start}
+.capgrid .cam{max-width:640px;width:100%;margin:0 auto}
+.sugg .opts{margin-top:0}
+#opts:not([hidden])~#sugEmpty{display:none}
+@media (min-width:700px){.capgrid{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr)}.capgrid .cam{margin:0;position:sticky;top:64px}.sugg{min-height:200px}}
 </style>
 </head>
 <body>
@@ -232,7 +237,7 @@ svg.chart{width:100%;height:auto;display:block}
 
 <!-- ===================== INVENTARIO + ESCÁNER ===================== -->
 <section class="view" id="view-cap" aria-label="Captura" hidden>
-  <div class="capwrap">
+  <div class="capgrid">
   <section class="cam" aria-label="Cámara">
     <div class="stage" id="stage">
       <video id="video" playsinline muted></video>
@@ -259,11 +264,14 @@ svg.chart{width:100%;height:auto;display:block}
       <input class="txt" id="manualIn" type="text" placeholder="Código (LOB-EN005) o nombre de la carta" autocomplete="off" aria-label="Código o nombre">
       <button class="btn" type="submit">Buscar</button>
     </form>
+  </section>
+  <section class="sugg" aria-label="Sugerencias">
     <div class="opts" id="opts" hidden>
       <div class="t"><span id="optsTitle"></span><button class="btn small ghost" type="button" id="optsClose">Cerrar</button></div>
       <div class="cands" id="cands"></div>
     </div>
     <div class="capfoot"><span id="capCount">Aún no has agregado cartas en esta sesión.</span><button class="btn small" type="button" data-go="inv">Ver inventario</button></div>
+    <div class="empty" id="sugEmpty">Las sugerencias aparecen aquí cuando la lectura tiene varias opciones o necesita tu confirmación.</div>
   </section>
   </div>
 </section>
