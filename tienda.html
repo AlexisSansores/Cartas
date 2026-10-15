@@ -245,7 +245,7 @@ svg.chart{width:100%;height:auto;display:block}
 
 <!-- ===================== INVENTARIO + ESCÁNER ===================== -->
 <section class="view" id="view-cap" aria-label="Captura" hidden>
-  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.28</button>
+  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.29</button>
   <div class="capgrid">
   <section class="cam" aria-label="Cámara">
     <div class="stage" id="stage">
@@ -512,7 +512,7 @@ svg.chart{width:100%;height:auto;display:block}
 (function(){
 'use strict';
 
-var APP_VERSION='2.28';
+var APP_VERSION='2.29';
 var API='https://db.ygoprodeck.com/api/v7/';
 var STORAGE='escaner-cartas-v1';
 var STORE_KEYS=['tcgplayer','cardmarket','ebay','coolstuffinc'];
@@ -1528,12 +1528,25 @@ function refine(res){
   z.drawImage(work,sx,sy,sw,sh,0,0,zoomCv.width,zoomCv.height);
   return ocr(zoomCv,'line').then(function(r2){return r2}).catch(function(){return null});
 }
+/* letras de color claro sobre fondo oscuro (o el pulso de polaridad falló): si no sale un código creíble se reintenta invertido */
+function ocrCodeBoth(cv,mode){
+  return ocr(cv,mode).then(function(res){
+    var t1=extractTokens(res.data);
+    if(t1.length&&t1[0].conf>=80)return res;
+    var inv=invertCv(cv,invCv2);
+    return ocr(inv,mode).then(function(r2){
+      var t2=extractTokens(r2.data);
+      if(t2.length&&(!t1.length||t2[0].conf>t1[0].conf)){dbgShow('dbgCode',inv);return r2}
+      return res;
+    });
+  });
+}
 function codeStep(bi,flip,adapt,mask){
   var B=useFit?BANDS_FIT:(farStyle()?BANDS:BANDS_NEAR), b=B[bi%B.length], whole=(b[1]-b[0])>0.9;
   var narrow=b.length>2; lastBandRect=b;
   var cv=grabRegion(narrow?b[2]:0,narrow?b[3]:1,b[0],b[1],whole?1400:1100,flip,adapt,mask&&!narrow);
   dbgShow('dbgCode',cv);
-  return ocr(cv,narrow?'line':'code').then(function(res){
+  return ocrCodeBoth(cv,narrow?'line':'code').then(function(res){
     lastCodeRaw=String(res.data.text||'').replace(/\s+/g,' ').trim(); lastCodeText=String(res.data.text||'');
     var toks=extractTokens(res.data);
     return refine(res).then(function(r2){
@@ -1702,8 +1715,9 @@ function ndbDownload(force){
   }).catch(function(e){ndb.msg='No se pudo descargar la lista de cartas ('+((e&&e.message)||e)+'). Se reintentará.'}).then(function(){ndb.busy=false;ndbUi()});
 }
 window.__tienda={zoneTest:function(base){curGeo=base;var cv=grabRegion(ZP.x0,ZP.x1,ZP.y0,ZP.y1,ZP.w,0,0,0,zoneCv);curGeo=null;var f=zoneFit(cv);var g=f&&zoneGeo(f,base);return {f:f,g:g}},ndbBuild:ndbBuild,ndbSearch:ndbSearch,tightLine:tightLine,detectNow:detectNow,setSrc:function(e){srcEl=e},updateApp:updateApp,setGeo:function(g){curGeo=g},grab:function(a,b,c,d,w,f,ad,m){return grabRegion(a,b,c,d,w,f,ad,m,workN)}};
-var invCv=document.createElement('canvas');
-function invertCv(cv){
+var invCv=document.createElement('canvas'), invCv2=document.createElement('canvas');
+function invertCv(cv,tg){
+  var invCv=tg||window.__invDefault||(window.__invDefault=document.createElement('canvas'));
   invCv.width=cv.width;invCv.height=cv.height;
   var c=invCv.getContext('2d',{willReadFrequently:true});c.drawImage(cv,0,0);
   var im=c.getImageData(0,0,cv.width,cv.height),d=im.data;
@@ -1825,6 +1839,8 @@ function scanOnce(){
     var found=rs[0], nr=pn?rs[1]:undefined;
     setDbg();
     if(found&&rejected[found.info.id])found=null;
+    /* si el nombre se leyó claro y es de otra carta, el código leído es basura: manda el nombre */
+    if(found&&nr&&nr.ranked&&nr.ranked.length&&nr.ranked[0].s>=AUTO&&nameScore(nr.raw,found.info.name)<0.5)found=null;
     if(found){
       failTicks=0;
       var code=found.info.set_code, now=Date.now();
@@ -2068,7 +2084,7 @@ function buildReport(){
   [['dbgName','Recorte del nombre'],['dbgCode','Recorte del código']].forEach(function(p){
     var c=$(p[0]); if(!c||!c.width||!c.height)return;
     text(p[1],'bold 20px sans-serif','#444');
-    var k=Math.min((W-2*pad)/c.width,150/c.height,1.5), cw=Math.round(c.width*k), ch=Math.round(c.height*k);
+    var k=Math.min((W-2*pad)/c.width,1), cw=Math.round(c.width*k), ch=Math.round(c.height*k);
     ctx.fillStyle='#888'; ctx.fillRect(pad,y,W-2*pad,ch); ctx.drawImage(c,pad,y,cw,ch); y+=ch+12;
   });
   var opts=$('opts');
