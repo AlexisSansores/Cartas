@@ -1,7 +1,7 @@
 /* Service worker de Tienda YGO: la app abre sin internet y se actualiza sola cuando hay conexión. */
-const VERSION = 'tienda-v3';
-const CORE = ['./tienda.html', './tienda.webmanifest', './tienda-192.png', './tienda-512.png', './huitzilin-logo.jpg', './tienda-maskable-512.png'];
-const CDN = ['cdn.jsdelivr.net', 'unpkg.com', 'tessdata.projectnaptha.com'];
+const VERSION = 'tienda-v4';
+const CORE = ['./tienda.html', './tienda.webmanifest', './tienda-192.png', './tienda-512.png', './huitzilin-logo.jpg', './tienda-maskable-512.png', './firebase-config.js'];
+const CDN = ['www.gstatic.com', 'cdn.jsdelivr.net', 'unpkg.com', 'tessdata.projectnaptha.com'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(CORE)).then(() => self.skipWaiting()));

@@ -177,6 +177,7 @@ svg.chart{width:100%;height:auto;display:block}
 @keyframes pulse{50%{opacity:.35}}
 .homeTitle{margin:6px 0 2px;text-align:center;font-size:1.5rem}
 .homeTitle small{display:block;font-size:.85rem;font-weight:500;color:var(--muted)}
+.note.err{color:var(--bad)}
 </style>
 </head>
 <body>
@@ -204,6 +205,7 @@ svg.chart{width:100%;height:auto;display:block}
     </div>
     <button class="btn small primary" type="button" id="installHome" hidden>Instalar app</button>
     <p class="sub" id="homeSub"></p>
+    <p class="sub" id="homeSync"></p>
   </div>
 </section>
 
@@ -396,6 +398,16 @@ svg.chart{width:100%;height:auto;display:block}
       <div class="form" id="catBox"></div>
       <div class="bar"><span class="note" id="catMsg"></span><button class="btn small" type="button" id="catSave">Guardar listas</button></div>
     </div>
+    <div class="panel" id="syncBox">
+      <h3 style="margin:0;font-size:.95rem">Sincronizar con otros dispositivos</h3>
+      <p class="note" style="margin:0">Entra con tu cuenta de Google en cada dispositivo y la tienda se mantiene igual en todos (inventario, ventas, compras y gastos). Funciona sin internet y se pone al día al volver la conexión.</p>
+      <div class="tools">
+        <button class="btn small primary" type="button" id="syncLogin" hidden>Iniciar sesión con Google</button>
+        <button class="btn small" type="button" id="syncNow" hidden>Sincronizar ahora</button>
+        <button class="btn small" type="button" id="syncLogout" hidden>Cerrar sesión</button>
+      </div>
+      <div class="note" id="syncState"></div>
+    </div>
     <div class="panel">
       <h3 style="margin:0;font-size:.95rem">Respaldo de datos</h3>
       <p class="note" style="margin:0">Todo se guarda en este celular. Descarga un respaldo seguido y guárdalo en Drive o mándalo a tu correo; sirve para pasar tus datos a otro celular.</p>
@@ -431,6 +443,7 @@ svg.chart{width:100%;height:auto;display:block}
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script src="firebase-config.js"></script>
 <script>
 (function(){
 'use strict';
@@ -754,7 +767,7 @@ function persist(){
   var snap=snapshot();
   return idbSet(DBKEY,snap).catch(function(){
     try{localStorage.setItem(LS_KEY,JSON.stringify(snap))}catch(e){toast('No se pudo guardar en este dispositivo. Descarga un respaldo en Ajustes.')}
-  });
+  }).then(function(){if(typeof syncSoon==='function')syncSoon()});
 }
 function save(){_sm=null;clearTimeout(saveTimer);saveTimer=setTimeout(persist,150)}
 function applySnap(s){
@@ -1747,7 +1760,7 @@ function setupSettings(){
       try{
         var s=JSON.parse(String(r.result));
         if(!s||!Array.isArray(s.items))throw new Error('formato');
-        if(!window.confirm('Esto reemplaza los datos actuales por el respaldo ('+s.items.length+' productos, '+(s.sales||[]).length+' ventas). ¿Continuar?')){e.target.value='';return}
+        if(!window.confirm((typeof sync!=='undefined'&&sync.user?'Con la sincronización activa esto también cambia los datos en la nube y en los demás dispositivos. ':'')+'Esto reemplaza los datos actuales por el respaldo ('+s.items.length+' productos, '+(s.sales||[]).length+' ventas). ¿Continuar?')){e.target.value='';return}
         applySnap(s); normalize(); persist().then(function(){fillAllSelects();renderCatBox();renderAll();$('bkMsg').textContent='Respaldo restaurado.';toast('Respaldo restaurado.')});
       }catch(err){$('bkMsg').textContent='Ese archivo no es un respaldo válido de la tienda.'}
       e.target.value='';
@@ -1755,7 +1768,7 @@ function setupSettings(){
     r.readAsText(f);
   });
   $('wipeBtn').addEventListener('click',function(){
-    if(!window.confirm('Se borrarán TODOS los datos de la tienda en este celular (inventario, ventas, compras y gastos). ¿Descargaste un respaldo?'))return;
+    if(!window.confirm('Se borrarán TODOS los datos de la tienda (inventario, ventas, compras y gastos)'+(typeof sync!=='undefined'&&sync.user?'. ATENCIÓN: la sincronización está activa y también se borrarán de la nube y de los demás dispositivos':' en este dispositivo')+'. ¿Descargaste un respaldo?'))return;
     if(!window.confirm('Última confirmación: ¿borrar todo definitivamente?'))return;
     wipeAll().then(function(){fillAllSelects();renderCatBox();renderAll();toast('Datos borrados.')});
   });
@@ -1801,6 +1814,221 @@ function showView(v){
   window.scrollTo(0,0);
 }
 
+/* ---------- sincronización entre dispositivos (Firebase) ---------- */
+var FB_VER='10.12.2', FB_BASE='https://www.gstatic.com/firebasejs/'+FB_VER+'/';
+var sync={cfg:null,fb:null,authI:null,db:null,user:null,unsub:null,meta:null,state:'off',msg:'',ready:false,pushing:false,again:false,timer:null,starting:false,retry:null};
+function syncList(c){
+  if(c==='items')return items; if(c==='sales')return sales; if(c==='purchases')return purchases; if(c==='expenses')return expenses;
+  return [Object.assign({id:'cats'},cats)];
+}
+function syncHash(s){var h1=0xdeadbeef,h2=0x41c6ce57,c,i;for(i=0;i<s.length;i++){c=s.charCodeAt(i);h1=Math.imul(h1^c,2654435761);h2=Math.imul(h2^c,1597334677)}
+  h1=Math.imul(h1^(h1>>>16),2246822507)^Math.imul(h2^(h2>>>13),3266489909);h2=Math.imul(h2^(h2>>>16),2246822507)^Math.imul(h1^(h1>>>13),3266489909);
+  return (4294967296*(2097151&h2)+(h1>>>0)).toString(36)}
+function syncDocId(c,id){return c+'_'+String(id).replace(/[^A-Za-z0-9_-]/g,'_')}
+function withTimeout(p,ms){return Promise.race([p,new Promise(function(_,rej){setTimeout(function(){rej(new Error('tiempo agotado'))},ms)})])}
+function metaLoad(){return idbGet('sync').catch(function(){return null}).then(function(m){sync.meta=m||{hash:{},ut:{},cursor:0,linked:false,enabled:false,email:'',last:0}})}
+function metaSave(){return idbSet('sync',sync.meta).catch(function(){})}
+function localCount(){return items.length+sales.length+purchases.length+expenses.length}
+
+function syncInit(){
+  sync.cfg=window.FIREBASE_CONFIG||null;
+  return metaLoad().then(function(){
+    renderSyncUI();
+    if(sync.cfg&&sync.meta.enabled)syncStart(false);
+  });
+}
+function syncLoadSdk(){
+  if(sync.fb)return Promise.resolve(sync.fb);
+  return Promise.all([import(FB_BASE+'firebase-app.js'),import(FB_BASE+'firebase-auth.js'),import(FB_BASE+'firebase-firestore.js')]).then(function(m){
+    var app=m[0].initializeApp(sync.cfg);
+    sync.fb={auth:m[1],fs:m[2]};
+    sync.authI=m[1].getAuth(app);
+    sync.db=m[2].initializeFirestore(app,{experimentalAutoDetectLongPolling:true});
+    return sync.fb;
+  });
+}
+function syncStart(interactive){
+  if(!sync.cfg){setSync('nocfg','');return}
+  if(sync.starting||sync.user&&sync.unsub)return;
+  sync.starting=true; setSync('connecting','Conectando…');
+  syncLoadSdk().then(function(fb){
+    return new Promise(function(res){
+      var first=true;
+      fb.auth.onAuthStateChanged(sync.authI,function(u){
+        if(first){first=false;res(u);return}
+        if(!u&&sync.user){syncStop();sync.user=null;setSync('login','Sesión cerrada.')}
+      });
+    }).then(function(u){
+      if(u)return u;
+      if(!interactive){setSync('login','Inicia sesión para sincronizar.');return null}
+      return fb.auth.signInWithPopup(sync.authI,new fb.auth.GoogleAuthProvider()).then(function(r){return r.user});
+    });
+  }).then(function(u){
+    sync.starting=false;
+    if(!u)return;
+    sync.user=u; sync.meta.enabled=true; sync.meta.email=u.email||''; metaSave();
+    syncListen();
+  }).catch(function(err){
+    sync.starting=false;
+    var code=err&&err.code||'';
+    if(code==='auth/popup-closed-by-user'||code==='auth/cancelled-popup-request')setSync('login','Inicio de sesión cancelado.');
+    else if(code==='auth/popup-blocked')setSync('error','El navegador bloqueó la ventana de Google. Permite ventanas emergentes e inténtalo otra vez.');
+    else if(code==='auth/unauthorized-domain')setSync('error','Falta autorizar este sitio en Firebase (Authentication → Configuración → Dominios autorizados).');
+    else if(!navigator.onLine||/import|fetch|network/i.test(String(err&&err.message)))setSync('offline','Sin conexión. Se sincronizará al volver internet.');
+    else setSync('error',(err&&err.message)||String(err));
+  });
+}
+function syncStop(){
+  if(sync.unsub){try{sync.unsub()}catch(e){}sync.unsub=null}
+  sync.ready=false; clearTimeout(sync.timer);
+}
+function syncListen(){
+  var fs=sync.fb.fs;
+  var col=fs.collection(sync.db,'tienda','main','registros');
+  var q=fs.query(col,fs.where('ut','>',sync.meta.cursor||0));
+  var firstSnap=true; sync.ready=false;
+  setSync('connecting','Sincronizando…');
+  sync.unsub=fs.onSnapshot(q,function(snap){
+    if(firstSnap){
+      firstSnap=false;
+      if(!sync.meta.linked){
+        if(snap.size>0&&localCount()>0){
+          if(window.confirm('La nube ya tiene datos de la tienda y este dispositivo también tiene datos.\n\nAceptar = REEMPLAZAR los de este dispositivo por los de la nube.\nCancelar = COMBINAR (se conservan los dos).')){
+            items=[];sales=[];purchases=[];expenses=[];sync.meta.hash={};sync.meta.ut={};
+          }
+        }
+        sync.meta.linked=true;
+      }
+    }
+    syncApply(snap);
+    sync.ready=true;
+    if(sync.state==='connecting'||sync.state==='error')setSync('ok');
+    syncSoon(0);
+  },function(err){
+    if(err&&err.code==='permission-denied')setSync('denied','Esta cuenta ('+(sync.user&&sync.user.email||'')+') no tiene permiso. Cierra sesión y entra con la cuenta autorizada.');
+    else setSync('error',(err&&err.message)||String(err));
+  });
+}
+function syncApply(snap){
+  var changed=false,maxUt=0,applied=[];
+  snap.docChanges().forEach(function(c){
+    if(c.type==='removed')return;
+    var d=c.doc.data(); if(!d||!d.coll)return;
+    if(d.ut>maxUt)maxUt=d.ut;
+    if(syncApplyOne(d)){changed=true;applied.push(d)}
+  });
+  if(maxUt)sync.meta.cursor=Math.max(sync.meta.cursor||0,maxUt-300000);
+  if(changed){
+    normalize(); _sm=null;
+    applied.forEach(function(d){   // el hash se toma ya normalizado para no reenviar lo recibido
+      var k=d.coll+':'+d.rid; if(d.del)return;
+      var l=syncList(d.coll),i;
+      for(i=0;i<l.length;i++)if(l[i].id===d.rid){sync.meta.hash[k]=syncHash(JSON.stringify(l[i]));break}
+    });
+    persist(); try{fillAllSelects();renderAll()}catch(e){}
+  }
+  metaSave();
+}
+function syncApplyOne(d){
+  var k=d.coll+':'+d.rid, cur=sync.meta.hash[k], lut=sync.meta.ut[k]||0;
+  if(d.ut<=lut)return false;
+  var list=syncList(d.coll),idx=-1,i;
+  for(i=0;i<list.length;i++)if(list[i].id===d.rid){idx=i;break}
+  if(idx>-1){ if(cur!==syncHash(JSON.stringify(list[idx])))return false; }   // cambios locales sin enviar: ganan
+  else if(cur&&cur!=='D')return false;                                         // borrado local sin enviar
+  if(d.del){
+    if(d.coll==='cats')return false;
+    if(idx>-1)list.splice(idx,1);
+    sync.meta.hash[k]='D';
+  }else{
+    var rec; try{rec=JSON.parse(d.data)}catch(e){return false}
+    if(d.coll==='cats'){delete rec.id;cats=Object.assign({},clone(DEFAULT_CATS),rec)}
+    else if(idx>-1)list[idx]=rec; else list.push(rec);
+    sync.meta.hash[k]=syncHash(JSON.stringify(d.coll==='cats'?Object.assign({id:'cats'},cats):rec));
+  }
+  sync.meta.ut[k]=d.ut;
+  return true;
+}
+function syncCollect(){
+  var ops=[],seen={},now=Date.now();
+  ['items','sales','purchases','expenses','cats'].forEach(function(c){
+    syncList(c).forEach(function(r){
+      var k=c+':'+r.id; seen[k]=1;
+      var js=JSON.stringify(r),h=syncHash(js);
+      if(sync.meta.hash[k]!==h)ops.push({k:k,c:c,id:r.id,js:js,h:h,del:false,ut:Math.max(now,(sync.meta.ut[k]||0)+1)});
+    });
+  });
+  Object.keys(sync.meta.hash).forEach(function(k){
+    if(seen[k]||sync.meta.hash[k]==='D')return;
+    var p=k.indexOf(':'); ops.push({k:k,c:k.slice(0,p),id:k.slice(p+1),js:'',h:'D',del:true,ut:Math.max(now,(sync.meta.ut[k]||0)+1)});
+  });
+  return ops;
+}
+function syncPending(){return sync.meta&&sync.user?syncCollect().length:0}
+function syncSoon(delay){
+  if(!sync.user||!sync.ready)return;
+  clearTimeout(sync.timer); sync.timer=setTimeout(syncPush,delay==null?1200:delay);
+}
+function syncPush(){
+  if(!sync.user||!sync.ready||!navigator.onLine)return;
+  if(sync.pushing){sync.again=true;return}
+  var ops=syncCollect();
+  if(!ops.length){if(sync.state!=='ok')setSync('ok');return}
+  sync.pushing=true; setSync('pushing','Enviando '+ops.length+' cambio'+(ops.length===1?'':'s')+'…');
+  var fs=sync.fb.fs,i=0,ok=true;
+  function next(){
+    if(i>=ops.length)return Promise.resolve();
+    var chunk=ops.slice(i,i+400); i+=400;
+    var b=fs.writeBatch(sync.db);
+    chunk.forEach(function(o){b.set(fs.doc(sync.db,'tienda','main','registros',syncDocId(o.c,o.id)),{coll:o.c,rid:o.id,data:o.js,del:o.del,ut:o.ut,by:(sync.user&&sync.user.email)||''})});
+    return withTimeout(b.commit(),25000).then(function(){
+      chunk.forEach(function(o){sync.meta.hash[o.k]=o.h;sync.meta.ut[o.k]=o.ut});
+      return metaSave();
+    }).then(next);
+  }
+  next().then(function(){sync.meta.last=Date.now();setSync('ok')}).catch(function(err){
+    ok=false;
+    if(err&&err.code==='permission-denied')setSync('denied','Esta cuenta no tiene permiso para guardar en la nube.');
+    else{setSync('error','No se pudo enviar: '+((err&&err.message)||err)+'. Reintentando…');clearTimeout(sync.retry);sync.retry=setTimeout(function(){syncSoon(0)},30000)}
+  }).then(function(){
+    sync.pushing=false;
+    if(sync.again){sync.again=false;syncSoon(400)}
+  });
+}
+function syncNow(){
+  if(!sync.cfg)return;
+  if(!sync.user){syncStart(true);return}
+  syncStop(); sync.meta.cursor=0; metaSave(); syncListen();
+}
+function syncLogout(){
+  var fb=sync.fb; syncStop();
+  var p=fb&&sync.authI?fb.auth.signOut(sync.authI):Promise.resolve();
+  p.catch(function(){}).then(function(){
+    sync.user=null; sync.meta.enabled=false; sync.meta.linked=false; sync.meta.hash={}; sync.meta.ut={}; sync.meta.cursor=0; metaSave();
+    setSync('login','Sesión cerrada. Los datos siguen en este dispositivo.');
+  });
+}
+function setSync(state,msg){sync.state=state;sync.msg=msg||'';renderSyncUI()}
+function renderSyncUI(){
+  var st=$('syncState'); if(!st)return;
+  var cfg=!!sync.cfg, on=!!sync.user;
+  var txt;
+  if(!cfg)txt='La sincronización aún no está configurada en esta versión de la app.';
+  else if(state2('ok'))txt='☁ Sincronizado'+(sync.user&&sync.user.email?' · '+sync.user.email:'')+(sync.meta&&sync.meta.last?' · '+new Date(sync.meta.last).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}):'');
+  else txt=sync.msg||(on?'Conectado.':'Sin conectar. Los datos están solo en este dispositivo.');
+  function state2(s){return sync.state===s}
+  st.textContent=txt;
+  st.className='note'+(sync.state==='error'||sync.state==='denied'?' err':'');
+  $('syncLogin').hidden=!cfg||on; $('syncLogout').hidden=!on; $('syncNow').hidden=!on;
+  var hs=$('homeSync'); if(hs){hs.textContent=!cfg?'':(on?(sync.state==='ok'?'☁ Sincronizado':sync.state==='pushing'?'☁ Enviando…':sync.state==='error'||sync.state==='denied'?'⚠ Sincronización con problemas':sync.state==='offline'?'☁ Sin conexión':'☁ Conectando…'):'')}
+}
+function syncWiring(){
+  $('syncLogin').addEventListener('click',function(){syncStart(true)});
+  $('syncLogout').addEventListener('click',function(){if(window.confirm('¿Cerrar sesión? Los datos se quedan en este dispositivo pero dejarán de sincronizarse.'))syncLogout()});
+  $('syncNow').addEventListener('click',function(){syncNow();toast('Sincronizando…')});
+  window.addEventListener('online',function(){if(sync.cfg&&sync.meta&&sync.meta.enabled){if(sync.user&&sync.ready)syncSoon(500);else syncStart(false)}});
+}
+
 /* ---------- conexiones de la interfaz ---------- */
 $('nav').addEventListener('click',function(e){var b=e.target.closest('button[data-v]');if(b)showView(b.dataset.v)});
 $('invFilter').addEventListener('input',function(e){invFilter=e.target.value;invLimit=60;render()});
@@ -1835,7 +2063,7 @@ function boot(migrated){
   fillAllSelects(); setupSales(); setupPurchases(); setupExpenses(); setupSettings();
   render(); renderSales(); renderPurchases(); renderExpenses(); renderSummary(); renderHome(); showView('hom');
   applyDist(); applyConf(); loadPrefixes();
-  fetchFx(false);
+  fetchFx(false); syncWiring(); syncInit();
   if(items.some(function(i){return i.cardId})&&Date.now()-(prefs.pricesTs||0)>12*3600e3)setTimeout(refreshPrices,1500);
   if(migrated){save();toast('Importé el inventario de tu escáner anterior.')}
   if(location.protocol==='http:'&&location.hostname!=='localhost'&&location.hostname!=='127.0.0.1'){
