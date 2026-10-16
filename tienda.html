@@ -51,6 +51,11 @@ video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .zone span{position:absolute;right:6px;bottom:1px;font-size:.6rem;font-family:var(--mono);color:rgba(255,255,255,.75)}
 .zone.name{top:2%;height:9%}
 .zone.code{top:62%;height:22%}
+/* marco fijo: recuadros precisos para calibrar; si cubren el nombre y el código de la carta, el marco está bien */
+.guide.man .zone{border:2px dashed #ff4fd8;background:rgba(255,79,216,.12);border-radius:3px}
+.guide.man .zone span{font-size:.65rem;color:#fff;background:rgba(0,0,0,.55);padding:0 3px;border-radius:2px;right:2px;bottom:auto;top:-1px}
+.guide.man .zone.name{border-color:#2fb8ff;background:rgba(47,184,255,.12);top:4%;height:8.5%;left:5%;right:17%}
+.guide.man .zone.code{top:70%;height:6.5%;left:45%;right:3%}
 .tag{position:absolute;left:8px;right:8px;bottom:8px;background:rgba(0,0,0,.72);color:#fff;border-radius:10px;padding:8px 10px;font-size:.88rem;display:none}
 .tag.on{display:block}
 .tag.ok{background:rgba(10,110,55,.92)}
@@ -246,7 +251,7 @@ svg.chart{width:100%;height:auto;display:block}
 
 <!-- ===================== INVENTARIO + ESCÁNER ===================== -->
 <section class="view" id="view-cap" aria-label="Captura" hidden>
-  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.43</button>
+  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.44</button>
   <div class="capgrid">
   <section class="cam" aria-label="Cámara">
     <div class="stage" id="stage">
@@ -524,7 +529,7 @@ svg.chart{width:100%;height:auto;display:block}
 (function(){
 'use strict';
 
-var APP_VERSION='2.43';
+var APP_VERSION='2.44';
 var API='https://db.ygoprodeck.com/api/v7/';
 var STORAGE='escaner-cartas-v1';
 var STORE_KEYS=['tcgplayer','cardmarket','ebay','coolstuffinc'];
@@ -1968,7 +1973,7 @@ function zoneGeo(f,base){
 }
 /* ancla del código: entre el borde de abajo del arte y el borde de arriba del cuadro de texto hay una franja con el código.
    Se buscan esas dos líneas largas y horizontales y se lee solo lo que hay entre ellas (sin bordes ni texto del efecto) */
-var tightCv2=document.createElement('canvas'), anchCv=document.createElement('canvas'), dynBand=null, anchDbg=null, anchScore=0, anchAng=0, anchLast=0;
+var STD_CODE=[0.70,0.765,0.40,0.985], tightCv2=document.createElement('canvas'), anchCv=document.createElement('canvas'), dynBand=null, anchDbg=null, anchScore=0, anchAng=0, anchLast=0;
 function codeAnchor(){
   var A0=0.60,A1=0.88, cv=grabRegion(0.2,0.8,A0,A1,700,0,0,0,anchCv), W=cv.width, H=cv.height;
   var d=cv.getContext('2d',{willReadFrequently:true}).getImageData(0,0,W,H).data, g=new Uint8Array(W*H), i, y, x;
@@ -2067,7 +2072,7 @@ function scanOnce(){
   curGeo=(!frameMan&&gd&&gd.score>=0.55&&failTicks%4!==3)?{cx:gd.cx,cy:gd.cy,w:gd.w*1.06,h:gd.h*1.06,ang:gd.ang,score:gd.score}:null;
   if(frameMan||!curGeo)zoneAdjust(); else useFit=false;
   showDetected(curGeo);
-  dynBand=null; if(frameMan&&useFit){try{dynBand=anchorBest().b}catch(e){dynBand=null}}
+  dynBand=null; if(frameMan&&useFit){var ab=null;try{ab=anchorBest().b}catch(e){ab=null} dynBand=[STD_CODE].concat(ab||[])}   /* la franja del recuadro rosa va primero */
   var nb=useFit?BANDS_FIT.length+(dynBand?dynBand.length:0):(farStyle()?BANDS.length:BANDS_NEAR.length), bi=failTicks%nb, vr=VARIANTS[Math.floor(failTicks/nb)%VARIANTS.length];
   if(dynBand){var dn=dynBand.length; bi=(failTicks%2===0)?(Math.floor(failTicks/2)%dn):dn+(Math.floor(failTicks/2)%BANDS_FIT.length)}   /* una de cada dos lecturas usa las franjas ancladas */
   var flip=vr[0], adapt=vr[1], mask=vr[2]&&farStyle(), ni=failTicks;
@@ -2271,7 +2276,7 @@ function setFrameMan(on){frameMan=on;curGeo=null;failTicks=0;applyFrame();saveFr
   $('frameWide').addEventListener('click',function(){bumpW(1.05)});
   $('frameMinus').addEventListener('click',function(){bump(0.92)});
   $('framePlus').addEventListener('click',function(){bump(1.08)});
-  $('frameBtn').addEventListener('click',function(){if(frameMan){setFrameMan(false);setStatus('Marco automático: la app busca la carta sola.')}else{FR=curFrame();setFrameMan(true);setStatus('Marco fijo: acomoda el marco donde pondrás las cartas (arrastra, toca para centrar, pellizca o − / + para el alto y ↔ para el ancho). Ajústalo justo sobre la cara de la carta, sin el grosor de la pila.')}});
+  $('frameBtn').addEventListener('click',function(){if(frameMan){setFrameMan(false);setStatus('Marco automático: la app busca la carta sola.')}else{FR=curFrame();setFrameMan(true);setStatus('Marco fijo: ajusta el marco para que quede justo sobre la cara de la carta (arrastra, pellizca o − / + para el alto, ↔ para el ancho). El recuadro azul debe cubrir el nombre y el rosa el código del set; así queda calibrado.')}});
   applyFrame();
 })();
 $('distBtn').addEventListener('click',function(){prefs.dist=prefs.dist==='near'?'far':'near';failTicks=0;save();applyDist();setStatus(prefs.dist==='near'?'Modo cerca: acerca la carta; basta con ver el código o el nombre.':'Modo lejos: encaja la carta completa en el marco.')});
