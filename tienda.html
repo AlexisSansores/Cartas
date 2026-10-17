@@ -54,6 +54,7 @@ video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 /* marco fijo: recuadros precisos para calibrar; si cubren el nombre y el código de la carta, el marco está bien */
 .guide.man .zone{border:2px dashed #ff4fd8;background:rgba(255,79,216,.12);border-radius:3px}
 .guide.man .zone span{font-size:.65rem;color:#fff;background:rgba(0,0,0,.55);padding:0 3px;border-radius:2px;right:2px;bottom:auto;top:-1px}
+.guide.man .zone{pointer-events:auto;cursor:move;touch-action:none}
 .guide.man .zone.name{border-color:#2fb8ff;background:rgba(47,184,255,.12);top:4%;height:8.5%;left:5%;right:17%}
 .guide.man .zone.code{top:70%;height:6.5%;left:45%;right:3%}
 .tag{position:absolute;left:8px;right:8px;bottom:8px;background:rgba(0,0,0,.72);color:#fff;border-radius:10px;padding:8px 10px;font-size:.88rem;display:none}
@@ -251,14 +252,14 @@ svg.chart{width:100%;height:auto;display:block}
 
 <!-- ===================== INVENTARIO + ESCÁNER ===================== -->
 <section class="view" id="view-cap" aria-label="Captura" hidden>
-  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.44</button>
+  <button type="button" class="ver" id="verTag" title="Toca para buscar actualizaciones">v2.45</button>
   <div class="capgrid">
   <section class="cam" aria-label="Cámara">
     <div class="stage" id="stage">
       <video id="video" playsinline muted></video>
       <div class="guide" id="guide">
-        <div class="zone name"><span>nombre</span></div>
-        <div class="zone code"><span>código</span></div>
+        <div class="zone name"><span>nombre ✥</span></div>
+        <div class="zone code"><span>código ✥</span></div>
       </div>
       <svg class="det" id="detSvg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polygon id="detPoly" points=""/></svg>
       <div class="tag" id="tag"></div>
@@ -319,6 +320,14 @@ svg.chart{width:100%;height:auto;display:block}
     </div>
     <div class="form">
       <label class="fld wide"><span>Buscar en el inventario</span><input class="txt" id="invFilter" type="search" placeholder="Nombre, código o SKU" autocomplete="off"></label>
+      <label class="fld"><span>Ordenar por</span><select class="sel" id="invSort">
+        <option value="recent">Más recientes</option>
+        <option value="name">Nombre (A–Z)</option>
+        <option value="priceDesc">Precio (mayor a menor)</option>
+        <option value="priceAsc">Precio (menor a mayor)</option>
+        <option value="qtyDesc">Cantidad (mayor a menor)</option>
+        <option value="qtyAsc">Cantidad (menor a mayor)</option>
+      </select></label>
     </div>
     <div class="chips" id="invChips" role="group" aria-label="Filtrar por estado">
       <button class="chip" type="button" data-f="all" aria-pressed="true">Todos</button>
@@ -529,7 +538,7 @@ svg.chart{width:100%;height:auto;display:block}
 (function(){
 'use strict';
 
-var APP_VERSION='2.44';
+var APP_VERSION='2.45';
 var API='https://db.ygoprodeck.com/api/v7/';
 var STORAGE='escaner-cartas-v1';
 var STORE_KEYS=['tcgplayer','cardmarket','ebay','coolstuffinc'];
@@ -1155,6 +1164,21 @@ function rowFor(it){
 }
 function priceLabel(){return prefs.basis==='print'?'Precio impresión':prefs.basis==='stores'?'Promedio tiendas':'Precio TCGplayer'}
 var _rendering=false,_again=false;
+/* orden del inventario: recientes, nombre, precio o cantidad (los sin precio van al final al ordenar por precio) */
+function sortFn(){
+  var m=prefs.invSort||'recent', byName=function(a,b){return String(a.name||'').localeCompare(String(b.name||''),'es',{sensitivity:'base'})};
+  var price=function(i){var v=itemValue(i,prefs.basis);return v>0?v:null};
+  if(m==='name')return byName;
+  if(m==='priceDesc'||m==='priceAsc'){
+    var dir=m==='priceDesc'?-1:1;
+    return function(a,b){var pa=price(a),pb=price(b); if(pa===null&&pb===null)return byName(a,b); if(pa===null)return 1; if(pb===null)return -1; return (pa-pb)*dir||byName(a,b)};
+  }
+  if(m==='qtyDesc'||m==='qtyAsc'){
+    var d=m==='qtyDesc'?-1:1;
+    return function(a,b){return (stockOf(a)-stockOf(b))*d||byName(a,b)};
+  }
+  return function(a,b){return (b.ts||0)-(a.ts||0)};
+}
 function render(){
   if(_rendering){_again=true;return}
   _rendering=true;
@@ -1167,12 +1191,12 @@ function renderNow(){
     h('span',null,'valor ',h('b',{text:money(t.value)+' USD'}),effFx()>0?' ≈ '+moneyMx(t.value*effFx()):'',t.unpriced?' (+'+t.unpriced+' sin precio)':''));
   if(t.pending)s.append(h('span',{text:t.pending+' por elegir impresión'}));
   $('invTitle').textContent='Inventario'+(items.length?' · '+items.length:''); if($('lhPrice'))$('lhPrice').textContent=priceLabel();
-  $('basis').value=prefs.basis;
+  $('basis').value=prefs.basis; if($('invSort'))$('invSort').value=prefs.invSort||'recent';
   if(document.activeElement!==$('fx')){var ef=effFx();$('fx').value=ef>0?Number(ef.toFixed(4)):''}
   $('fxInfo').textContent=fxText();
   var top=$('topSub'); if(top)top.textContent=effFx()>0?'USD→MXN '+effFx().toFixed(2)+(navigator.onLine===false?' · sin conexión':''):(navigator.onLine===false?'sin conexión':'');
   var list=$('list'); list.replaceChildren();
-  var all=items.slice().sort(function(a,b){return (b.ts||0)-(a.ts||0)}).filter(matchesFilter);
+  var all=items.slice().sort(sortFn()).filter(matchesFilter);
   all.slice(0,invLimit).forEach(function(it){list.append(rowFor(it))});
   $('moreBtn').hidden=all.length<=invLimit;
   $('moreBtn').textContent='Mostrar más ('+(all.length-invLimit)+')';
@@ -1901,6 +1925,7 @@ function ocrNameBoth(cv){
 function nameStep(flip,ni){
   var cv; lastNameRect=null;
   if(!farStyle()){var nb=NAME_NEAR[ni%NAME_NEAR.length];cv=grabRegion(0.05,0.83,nb[0],nb[1],1800,flip,0,0,workN);lastNameRect=[nb[0],nb[1],0.05,0.83]}
+  else if(frameMan&&useFit&&Math.floor(ni/2)%2===0){cv=grabRegion(ZN.l,1-ZN.r,ZN.t,ZN.t+ZN.h,1800,flip,0,0,workN);lastNameRect=[ZN.t,ZN.t+ZN.h,ZN.l,1-ZN.r]}   /* recuadro azul */
   else{var nl=useFit?NAME_FIT:NAME_FAR, nf=nl[Math.floor(ni/2)%nl.length];cv=grabRegion(0.05,0.83,nf[0],nf[1],1800,flip,0,0,workN);lastNameRect=[nf[0],nf[1],0.05,0.83]}
   if(ni%2===0){var t=null;try{t=tightLine(cv,tightCv)}catch(e){}if(t)cv=t}   /* lectura alterna: recortada y sin recortar */
   dbgShow('dbgName',cv);
@@ -1973,7 +1998,7 @@ function zoneGeo(f,base){
 }
 /* ancla del código: entre el borde de abajo del arte y el borde de arriba del cuadro de texto hay una franja con el código.
    Se buscan esas dos líneas largas y horizontales y se lee solo lo que hay entre ellas (sin bordes ni texto del efecto) */
-var STD_CODE=[0.70,0.765,0.40,0.985], tightCv2=document.createElement('canvas'), anchCv=document.createElement('canvas'), dynBand=null, anchDbg=null, anchScore=0, anchAng=0, anchLast=0;
+var tightCv2=document.createElement('canvas'), anchCv=document.createElement('canvas'), dynBand=null, anchDbg=null, anchScore=0, anchAng=0, anchLast=0;
 function codeAnchor(){
   var A0=0.60,A1=0.88, cv=grabRegion(0.2,0.8,A0,A1,700,0,0,0,anchCv), W=cv.width, H=cv.height;
   var d=cv.getContext('2d',{willReadFrequently:true}).getImageData(0,0,W,H).data, g=new Uint8Array(W*H), i, y, x;
@@ -2072,7 +2097,7 @@ function scanOnce(){
   curGeo=(!frameMan&&gd&&gd.score>=0.55&&failTicks%4!==3)?{cx:gd.cx,cy:gd.cy,w:gd.w*1.06,h:gd.h*1.06,ang:gd.ang,score:gd.score}:null;
   if(frameMan||!curGeo)zoneAdjust(); else useFit=false;
   showDetected(curGeo);
-  dynBand=null; if(frameMan&&useFit){var ab=null;try{ab=anchorBest().b}catch(e){ab=null} dynBand=[STD_CODE].concat(ab||[])}   /* la franja del recuadro rosa va primero */
+  dynBand=null; if(frameMan&&useFit){var ab=null;try{ab=anchorBest().b}catch(e){ab=null} dynBand=[stdCode()].concat(ab||[])}   /* la franja del recuadro rosa va primero */
   var nb=useFit?BANDS_FIT.length+(dynBand?dynBand.length:0):(farStyle()?BANDS.length:BANDS_NEAR.length), bi=failTicks%nb, vr=VARIANTS[Math.floor(failTicks/nb)%VARIANTS.length];
   if(dynBand){var dn=dynBand.length; bi=(failTicks%2===0)?(Math.floor(failTicks/2)%dn):dn+(Math.floor(failTicks/2)%BANDS_FIT.length)}   /* una de cada dos lecturas usa las franjas ancladas */
   var flip=vr[0], adapt=vr[1], mask=vr[2]&&farStyle(), ni=failTicks;
@@ -2221,6 +2246,18 @@ $('startBtn').addEventListener('click',function(){
   }).catch(function(e){setStatus(e.message||'No se pudo iniciar el lector.',true);$('start').hidden=false;btn.disabled=false;btn.textContent='Reintentar'});
 });
 /* ---------- marco manual: arrastra para mover, pellizca o +/− para el tamaño ---------- */
+var ZN0={t:0.04,h:0.085,l:0.05,r:0.17}, ZC0={t:0.70,h:0.065,l:0.45,r:0.03};
+var ZN=Object.assign({},ZN0), ZC=Object.assign({},ZC0);
+try{var zs_=JSON.parse(localStorage.getItem('tienda-zones')||'null');if(zs_&&zs_.n&&zs_.c){ZN=Object.assign({},ZN0,zs_.n);ZC=Object.assign({},ZC0,zs_.c)}}catch(e){}
+function saveZones(){try{localStorage.setItem('tienda-zones',JSON.stringify({n:ZN,c:ZC}))}catch(e){}}
+function stdCode(){return [ZC.t,ZC.t+ZC.h,ZC.l,1-ZC.r]}
+function applyZones(){
+  [['name',ZN],['code',ZC]].forEach(function(z){
+    var el=guide.querySelector('.zone.'+z[0]); if(!el)return;
+    if(frameMan){el.style.top=(z[1].t*100)+'%';el.style.height=(z[1].h*100)+'%';el.style.left=(z[1].l*100)+'%';el.style.right=(z[1].r*100)+'%'}
+    else{el.style.top=el.style.height=el.style.left=el.style.right=''}
+  });
+}
 var frameMan=false, FR={cx:0.5,cy:0.5,h:0.62,a:1};
 try{var fs_=JSON.parse(localStorage.getItem('tienda-frame')||'null');if(fs_&&fs_.h){frameMan=!!fs_.man;FR={cx:fs_.cx,cy:fs_.cy,h:fs_.h,a:fs_.a||1}}}catch(e){}
 function saveFrame(){try{localStorage.setItem('tienda-frame',JSON.stringify({man:frameMan,cx:FR.cx,cy:FR.cy,h:FR.h,a:FR.a||1}))}catch(e){}}
@@ -2229,10 +2266,10 @@ function applyFrame(){
   if(frameMan){
     FR.a=Math.min(1.8,Math.max(0.6,FR.a||1)); FR.h=Math.min(1.3,Math.max(0.2,FR.h)); FR.cx=Math.min(1,Math.max(0,FR.cx)); FR.cy=Math.min(1,Math.max(0,FR.cy));
     st.left=(FR.cx*100)+'%'; st.top=(FR.cy*100)+'%'; st.height=(FR.h*100)+'%'; st.width='auto'; st.aspectRatio=(59/86*FR.a).toFixed(4); st.transform='translate(-50%,-50%)'; st.borderRadius='10px'; st.borderWidth='3px';
-    guide.classList.add('man'); showDetected(null);
+    guide.classList.add('man'); showDetected(null); applyZones();
   }else{
     st.left=st.top=st.height=st.width=st.aspectRatio=st.transform=st.borderRadius=st.borderWidth='';
-    guide.classList.remove('man');
+    guide.classList.remove('man'); applyZones();
   }
   $('frameBtn').textContent='Marco: '+(frameMan?'fijo':'auto');
 }
@@ -2276,7 +2313,24 @@ function setFrameMan(on){frameMan=on;curGeo=null;failTicks=0;applyFrame();saveFr
   $('frameWide').addEventListener('click',function(){bumpW(1.05)});
   $('frameMinus').addEventListener('click',function(){bump(0.92)});
   $('framePlus').addEventListener('click',function(){bump(1.08)});
-  $('frameBtn').addEventListener('click',function(){if(frameMan){setFrameMan(false);setStatus('Marco automático: la app busca la carta sola.')}else{FR=curFrame();setFrameMan(true);setStatus('Marco fijo: ajusta el marco para que quede justo sobre la cara de la carta (arrastra, pellizca o − / + para el alto, ↔ para el ancho). El recuadro azul debe cubrir el nombre y el rosa el código del set; así queda calibrado.')}});
+  $('frameBtn').addEventListener('click',function(){if(frameMan){setFrameMan(false);setStatus('Marco automático: la app busca la carta sola.')}else{FR=curFrame();setFrameMan(true);setStatus('Marco fijo: ajusta el marco para que quede justo sobre la cara de la carta (arrastra, pellizca o − / + para el alto, ↔ para el ancho). Arrastra por separado el recuadro azul sobre el nombre y el rosa sobre el código del set (doble toque en un recuadro lo restablece).')}});
+  /* cada recuadro (nombre / código) se arrastra por separado: así cada uno puede quedar justo sobre su texto aunque el marco no calce con toda la carta */
+  [['name',ZN,ZN0],['code',ZC,ZC0]].forEach(function(z){
+    var el=guide.querySelector('.zone.'+z[0]), Z=z[1], st=null; if(!el)return;
+    el.addEventListener('pointerdown',function(e){
+      if(!frameMan)return; e.stopPropagation(); e.preventDefault();
+      try{el.setPointerCapture(e.pointerId)}catch(x){}
+      var gr=guide.getBoundingClientRect(); st={x:e.clientX,y:e.clientY,t:Z.t,l:Z.l,r:Z.r,gw:gr.width,gh:gr.height,id:e.pointerId};
+    });
+    el.addEventListener('pointermove',function(e){
+      if(!st||e.pointerId!==st.id)return; e.stopPropagation();
+      var dx=(e.clientX-st.x)/st.gw, dy=(e.clientY-st.y)/st.gh, w=1-st.l-st.r;
+      Z.t=Math.min(1-Z.h,Math.max(0,st.t+dy)); Z.l=Math.min(1-w,Math.max(0,st.l+dx)); Z.r=1-Z.l-w; applyZones();
+    });
+    function end(e){if(!st)return;e.stopPropagation();st=null;saveZones();setStatus('Recuadro '+(z[0]==='name'?'del nombre':'del código')+' colocado.')}
+    el.addEventListener('pointerup',end); el.addEventListener('pointercancel',end);
+    el.addEventListener('dblclick',function(e){e.stopPropagation();Object.assign(Z,z[2]);applyZones();saveZones();setStatus('Recuadro restablecido.')});
+  });
   applyFrame();
 })();
 $('distBtn').addEventListener('click',function(){prefs.dist=prefs.dist==='near'?'far':'near';failTicks=0;save();applyDist();setStatus(prefs.dist==='near'?'Modo cerca: acerca la carta; basta con ver el código o el nombre.':'Modo lejos: encaja la carta completa en el marco.')});
@@ -3036,6 +3090,7 @@ function syncWiring(){
 $('nav').addEventListener('click',function(e){var b=e.target.closest('button[data-v]');if(b)showView(b.dataset.v)});
 $('gearBtn').addEventListener('click',function(){showView('aju')});
 document.addEventListener('click',function(e){var b=e.target.closest('#view-cap button[data-go]');if(b)showView(b.dataset.go)});
+$('invSort').addEventListener('change',function(e){prefs.invSort=e.target.value;save();invLimit=60;render()});
 $('invFilter').addEventListener('input',function(e){invFilter=e.target.value;invLimit=60;render()});
 $('invChips').addEventListener('click',function(e){
   var b=e.target.closest('.chip');if(!b)return; invState=b.dataset.f; invLimit=60;
